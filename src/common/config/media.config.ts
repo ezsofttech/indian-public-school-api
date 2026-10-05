@@ -1,6 +1,18 @@
 import { ConfigService } from '@nestjs/config';
 
 /**
+ * Returns the base Cloudinary domain without root folder suffix (e.g. https://res.cloudinary.com/niefrrkx).
+ */
+export function getCloudinaryCloudBaseUrl(configService?: ConfigService): string {
+  const cloudName =
+    configService?.get<string>('CLOUDINARY_CLOUD_NAME') ||
+    process.env.CLOUDINARY_CLOUD_NAME ||
+    'niefrrkx';
+
+  return `https://res.cloudinary.com/${cloudName.trim()}`;
+}
+
+/**
  * Returns the base URL prefix for media assets without a trailing slash.
  * Default: https://res.cloudinary.com/niefrrkx/ips-education/assets
  */
@@ -13,14 +25,10 @@ export function getMediaBaseUrl(configService?: ConfigService): string {
     return envUrl.trim().replace(/\/+$/, '');
   }
 
-  const cloudName =
-    configService?.get<string>('CLOUDINARY_CLOUD_NAME') ||
-    process.env.CLOUDINARY_CLOUD_NAME ||
-    'niefrrkx';
-
+  const cloudBase = getCloudinaryCloudBaseUrl(configService);
   const rootFolder = getCloudinaryRootFolder(configService);
 
-  return `https://res.cloudinary.com/${cloudName.trim()}/${rootFolder}/assets`;
+  return `${cloudBase}/${rootFolder}/assets`;
 }
 
 /**
@@ -78,7 +86,7 @@ export function formatPrettyEventName(name?: unknown): string {
 /**
  * Strips the media host / Cloudinary / /assets prefix from a URL to store a clean relative path in DB.
  * E.g. "https://res.cloudinary.com/niefrrkx/ips-education/assets/Gallery/pic.jpg" => "/Gallery/pic.jpg"
- * E.g. "/assets/Gallery/pic.jpg" => "/Gallery/pic.jpg"
+ * E.g. "https://res.cloudinary.com/niefrrkx/image/upload/v1234/ips-education/assets/Student/pic.jpg" => "/image/upload/v1234/ips-education/assets/Student/pic.jpg"
  */
 export function toRelativeMediaPath(
   urlOrPath: unknown,
@@ -92,29 +100,26 @@ export function toRelativeMediaPath(
 
   // If HTTP/HTTPS absolute URL
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    // Sanitize any malformed URLs where /assets/upload/ or /ips-education/assets/upload/ was prepended
+    trimmed = trimmed
+      .replace(/\/(?:ips-education|indian-public-school)\/assets\/upload\//gi, '/image/upload/')
+      .replace(/\/assets\/upload\//gi, '/image/upload/');
+
     try {
       const baseUrl = getMediaBaseUrl(configService);
 
       if (trimmed.startsWith(baseUrl)) {
         trimmed = trimmed.slice(baseUrl.length);
       } else {
-        const cloudMatch = trimmed.match(
-          /^https?:\/\/res\.cloudinary\.com\/[^/]+(?:\/[^/]+)?(?:\/assets)?(\/.*)$/i,
-        );
-        if (cloudMatch && cloudMatch[1]) {
-          trimmed = cloudMatch[1];
+        const cloudBaseUrl = getCloudinaryCloudBaseUrl(configService);
+        if (trimmed.startsWith(cloudBaseUrl)) {
+          trimmed = trimmed.slice(cloudBaseUrl.length);
         } else {
-          const parsedUrl = new URL(trimmed);
-          if (parsedUrl.hostname.includes('cloudinary.com')) {
-            const parts = parsedUrl.pathname.split('/').filter(Boolean);
-            const assetsIdx = parts.lastIndexOf('assets');
-            if (assetsIdx !== -1 && assetsIdx < parts.length - 1) {
-              trimmed = '/' + parts.slice(assetsIdx + 1).join('/');
-            } else if (parts.length > 2) {
-              trimmed = '/' + parts.slice(2).join('/');
-            } else {
-              trimmed = parsedUrl.pathname;
-            }
+          const cloudMatch = trimmed.match(
+            /^https?:\/\/res\.cloudinary\.com\/[^/]+(\/.*)$/i,
+          );
+          if (cloudMatch && cloudMatch[1]) {
+            trimmed = cloudMatch[1];
           }
         }
       }
@@ -127,18 +132,20 @@ export function toRelativeMediaPath(
     trimmed = '/' + trimmed;
   }
 
-  // Strip redundant root folder & /assets/ prefixes for clean relative storage
-  trimmed = trimmed
-    .replace(/^\/(ips-education|indian-public-school)\/assets\//i, '/')
-    .replace(/^\/(ips-education|indian-public-school)\//i, '/')
-    .replace(/^\/assets\//i, '/');
+  // Only strip root folder / assets if it's NOT an /image/upload, /video/upload, /raw/upload, or /upload path
+  if (!/^\/(?:image|video|raw)?\/?upload\//i.test(trimmed)) {
+    trimmed = trimmed
+      .replace(/^\/(ips-education|indian-public-school)\/assets\//i, '/')
+      .replace(/^\/(ips-education|indian-public-school)\//i, '/')
+      .replace(/^\/assets\//i, '/');
+  }
 
   return trimmed;
 }
 
 /**
  * Attaches the media base URL prefix to a relative media path for API responses.
- * Prevents redundant /assets/assets/ or /ips-education/assets/ duplication.
+ * Ensures valid Cloudinary delivery URLs without malformed prefix duplication.
  */
 export function toFullMediaUrl(
   pathOrUrl: unknown,
@@ -150,9 +157,23 @@ export function toFullMediaUrl(
 
   let trimmed = pathOrUrl.trim();
 
-  // If already absolute URL, clean any accidental double prefixes inside URL
+  // If already absolute URL, clean any accidental malformed patterns inside URL
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed.replace(/\/assets\/assets\//gi, '/assets/');
+    return trimmed
+      .replace(/\/(?:ips-education|indian-public-school)\/assets\/upload\//gi, '/image/upload/')
+      .replace(/\/assets\/upload\//gi, '/image/upload/')
+      .replace(/\/assets\/assets\//gi, '/assets/');
+  }
+
+  const cloudBaseUrl = getCloudinaryCloudBaseUrl(configService);
+
+  // If path starts with /image/upload/, /video/upload/, /raw/upload/, /upload/
+  if (/^\/(?:image|video|raw)\/upload\//i.test(trimmed)) {
+    return `${cloudBaseUrl}${trimmed}`;
+  }
+
+  if (/^\/upload\//i.test(trimmed)) {
+    return `${cloudBaseUrl}/image${trimmed}`;
   }
 
   const baseUrl = getMediaBaseUrl(configService);
