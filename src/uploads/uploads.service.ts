@@ -63,17 +63,25 @@ export class UploadsService {
 
     const rawFolderInput = (folder || '').trim();
     const rawAlbumInput = (album || '').trim();
-    const lowerFolder = rawFolderInput.toLowerCase();
+
+    // Deduplicate and sanitize folder input to avoid nested ips-education/assets/assets/Videos paths
+    const cleanRawFolder = rawFolderInput
+      .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'Videos/')
+      .replace(/(?:Videos\/)+Videos\//gi, 'Videos/');
+    const lowerFolder = cleanRawFolder.toLowerCase();
     const lowerAlbum = rawAlbumInput.toLowerCase();
 
     let targetFolder: string;
 
     if (lowerFolder.startsWith('indian-public-school/assets/')) {
-      targetFolder = rawFolderInput.replace(/^indian-public-school\/assets\//i, `${assetsPrefix}/`);
+      targetFolder = cleanRawFolder.replace(/^indian-public-school\/assets\//i, `${assetsPrefix}/`);
     } else if (lowerFolder.startsWith('ips-education/assets/')) {
-      targetFolder = rawFolderInput.replace(/^ips-education\/assets\//i, `${assetsPrefix}/`);
+      targetFolder = cleanRawFolder.replace(/^ips-education\/assets\//i, `${assetsPrefix}/`);
     } else if (lowerFolder.startsWith(`${rootFolder.toLowerCase()}/assets/`)) {
-      targetFolder = rawFolderInput;
+      targetFolder = cleanRawFolder;
+    } else if (lowerFolder.startsWith('assets/')) {
+      const sub = cleanRawFolder.replace(/^assets\//i, '');
+      targetFolder = `${assetsPrefix}/${sub}`;
     } else if (lowerFolder.includes('logos') || lowerAlbum.includes('logos')) {
       targetFolder = `${assetsPrefix}/Settings/Logos`;
     } else if (lowerFolder.includes('settings') || lowerAlbum.includes('settings') || lowerFolder.includes('school-settings') || lowerAlbum.includes('school-settings')) {
@@ -92,8 +100,8 @@ export class UploadsService {
       targetFolder = `${assetsPrefix}/Videos`;
     } else if (isDoc) {
       targetFolder = `${assetsPrefix}/Documents/General`;
-    } else if (rawFolderInput) {
-      const cleanFolder = rawFolderInput.replace(/^\/+|\/+$/g, '');
+    } else if (cleanRawFolder) {
+      const cleanFolder = cleanRawFolder.replace(/^\/+|\/+$/g, '').replace(/^assets\//i, '');
       if (cleanFolder.toLowerCase().startsWith('album/')) {
         const sub = cleanFolder.replace(/^album\//i, '');
         const formattedSub = sub ? sub.charAt(0).toUpperCase() + sub.slice(1) : 'General';

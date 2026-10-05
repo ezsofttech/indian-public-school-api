@@ -96,14 +96,18 @@ export function toRelativeMediaPath(
     return urlOrPath;
   }
 
-  let trimmed = urlOrPath.trim();
+  let trimmed = urlOrPath.trim()
+    .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'assets/Videos/')
+    .replace(/(?:Videos\/)+Videos\//gi, 'Videos/');
 
   // If HTTP/HTTPS absolute URL
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     // Sanitize any malformed URLs where /assets/upload/ or /ips-education/assets/upload/ was prepended
     trimmed = trimmed
       .replace(/\/(?:ips-education|indian-public-school)\/assets\/upload\//gi, '/image/upload/')
-      .replace(/\/assets\/upload\//gi, '/image/upload/');
+      .replace(/\/assets\/upload\//gi, '/image/upload/')
+      .replace(/\/assets\/assets\//gi, '/assets/')
+      .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'assets/Videos/');
 
     try {
       const baseUrl = getMediaBaseUrl(configService);
@@ -155,14 +159,17 @@ export function toFullMediaUrl(
     return pathOrUrl;
   }
 
-  let trimmed = pathOrUrl.trim();
+  let trimmed = pathOrUrl.trim()
+    .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'assets/Videos/')
+    .replace(/(?:Videos\/)+Videos\//gi, 'Videos/');
 
   // If already absolute URL, clean any accidental malformed patterns inside URL
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed
       .replace(/\/(?:ips-education|indian-public-school)\/assets\/upload\//gi, '/image/upload/')
       .replace(/\/assets\/upload\//gi, '/image/upload/')
-      .replace(/\/assets\/assets\//gi, '/assets/');
+      .replace(/\/assets\/assets\//gi, '/assets/')
+      .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'assets/Videos/');
   }
 
   const cloudBaseUrl = getCloudinaryCloudBaseUrl(configService);
