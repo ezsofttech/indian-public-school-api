@@ -59,7 +59,9 @@ export class UploadsService {
       (!processedFile.mimetype.startsWith('image/') && !processedFile.mimetype.startsWith('video/'));
 
     const rootFolder = getCloudinaryRootFolder(this.configService);
-    const assetsPrefix = `${rootFolder}/assets`;
+    const assetsPrefix = rootFolder.toLowerCase().replace(/\/+$/, '').endsWith('/assets')
+      ? rootFolder
+      : `${rootFolder}/assets`;
 
     const rawFolderInput = (folder || '').trim();
     const rawAlbumInput = (album || '').trim();
@@ -73,12 +75,11 @@ export class UploadsService {
 
     let targetFolder: string;
 
-    if (lowerFolder.startsWith('indian-public-school/assets/')) {
-      targetFolder = cleanRawFolder.replace(/^indian-public-school\/assets\//i, `${assetsPrefix}/`);
-    } else if (lowerFolder.startsWith('ips-education/assets/')) {
-      targetFolder = cleanRawFolder.replace(/^ips-education\/assets\//i, `${assetsPrefix}/`);
-    } else if (lowerFolder.startsWith(`${rootFolder.toLowerCase()}/assets/`)) {
+    if (lowerFolder.startsWith(`${rootFolder.toLowerCase()}/`)) {
       targetFolder = cleanRawFolder;
+    } else if (lowerFolder.includes('/assets/')) {
+      const sub = cleanRawFolder.replace(/^.*\/assets\//i, '');
+      targetFolder = `${assetsPrefix}/${sub}`;
     } else if (lowerFolder.startsWith('assets/')) {
       const sub = cleanRawFolder.replace(/^assets\//i, '');
       targetFolder = `${assetsPrefix}/${sub}`;
@@ -150,6 +151,7 @@ export class UploadsService {
       fileUrl: [relativeUrl],
       eventType: eventType,
       directory: directoryPath,
+      mimeType: processedFile.mimetype,
     });
 
     const plainAsset = typeof (asset as any).toObject === 'function' ? (asset as any).toObject() : asset;
@@ -158,6 +160,7 @@ export class UploadsService {
       ...plainAsset,
       url: relativeUrl,
       fileUrl: asset.fileUrl || [relativeUrl],
+      mimeType: asset.mimeType || processedFile.mimetype,
       key: result.key,
       provider: result.provider,
     };

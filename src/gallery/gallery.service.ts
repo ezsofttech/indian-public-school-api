@@ -80,19 +80,19 @@ export class GalleryService {
     // 2. Map DB file URLs and assign fallbacks for records without images
     const dbUrls = new Set<string>();
     const DEFAULT_FALLBACK_IMAGES = [
-      "/ips-education/assets/Settings/Home/hero-campus.jpg",
+      "/Settings/Home/hero-campus.jpg",
       "https://images.unsplash.com/photo-1562774053-701939374585?w=1200&auto=format&fit=crop&q=80",
       "https://images.unsplash.com/photo-1580582932707-520aed937b7b?w=1200&auto=format&fit=crop&q=80",
       "https://images.unsplash.com/photo-1577896851231-70ef18881754?w=1200&auto=format&fit=crop&q=80",
       "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=1200&auto=format&fit=crop&q=80",
-      "/ips-education/assets/Settings/Home/Banner_1.jpg",
-      "/ips-education/assets/Settings/Home/Banner_2.jpg",
-      "/ips-education/assets/Settings/Home/Banner_3.jpg",
-      "/ips-education/assets/Settings/Home/Banner_4.jpg",
-      "/ips-education/assets/Settings/Home/Banner_5.jpg",
-      "/ips-education/assets/Settings/Home/Banner_6.jpg",
-      "/ips-education/assets/Settings/Home/Banner_7.jpg",
-      "/ips-education/assets/Settings/Home/Banner_8.jpg",
+      "/Settings/Home/Banner_1.jpg",
+      "/Settings/Home/Banner_2.jpg",
+      "/Settings/Home/Banner_3.jpg",
+      "/Settings/Home/Banner_4.jpg",
+      "/Settings/Home/Banner_5.jpg",
+      "/Settings/Home/Banner_6.jpg",
+      "/Settings/Home/Banner_7.jpg",
+      "/Settings/Home/Banner_8.jpg",
     ];
 
     dbItems.forEach((item: any, idx: number) => {
@@ -152,6 +152,7 @@ export class GalleryService {
           eventType: cat,
           directory: dirPath,
           fileUrl: [res.url],
+          mimeType: res.mimeType || (res.format === 'pdf' ? 'application/pdf' : res.resourceType === 'video' ? `video/${res.format || 'mp4'}` : `image/${res.format || 'jpeg'}`),
           isCdnResource: true,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -161,19 +162,19 @@ export class GalleryService {
 
     // 4b. Ensure complete media suite with default sample assets
     const DEFAULT_MEDIA_ITEMS = [
-      { eventName: "Main Campus Aerial View", eventType: "Campus", directory: "/album/campus", fileUrl: ["/ips-education/assets/Settings/Home/hero-campus.jpg"] },
+      { eventName: "Main Campus Aerial View", eventType: "Campus", directory: "/album/campus", fileUrl: ["/Settings/Home/hero-campus.jpg"] },
       { eventName: "School Academic Infrastructure", eventType: "Campus", directory: "/album/campus", fileUrl: ["https://images.unsplash.com/photo-1562774053-701939374585?w=1200&auto=format&fit=crop&q=80"] },
       { eventName: "Smart Science & Innovation Lab", eventType: "Activities", directory: "/album/activities", fileUrl: ["https://images.unsplash.com/photo-1580582932707-520aed937b7b?w=1200&auto=format&fit=crop&q=80"] },
       { eventName: "Digital Smart Interactive Classroom", eventType: "Campus", directory: "/album/campus", fileUrl: ["https://images.unsplash.com/photo-1577896851231-70ef18881754?w=1200&auto=format&fit=crop&q=80"] },
       { eventName: "Central Library & Knowledge Hub", eventType: "Campus", directory: "/album/campus", fileUrl: ["https://images.unsplash.com/photo-1509062522246-3755977927d7?w=1200&auto=format&fit=crop&q=80"] },
-      { eventName: "School Entrance & Reception", eventType: "Banners", directory: "/album/banners", fileUrl: ["/ips-education/assets/Settings/Home/Banner_1.jpg"] },
-      { eventName: "Annual Athletic Sports Field", eventType: "Sports", directory: "/album/sports", fileUrl: ["/ips-education/assets/Settings/Home/Banner_2.jpg"] },
-      { eventName: "Cultural Festival Stage", eventType: "Events", directory: "/album/events", fileUrl: ["/ips-education/assets/Settings/Home/Banner_3.jpg"] },
-      { eventName: "Co-Curricular Student Center", eventType: "Activities", directory: "/album/activities", fileUrl: ["/ips-education/assets/Settings/Home/Banner_4.jpg"] },
-      { eventName: "Computer Science Center", eventType: "Campus", directory: "/album/campus", fileUrl: ["/ips-education/assets/Settings/Home/Banner_7.jpg"] },
-      { eventName: "Art & Craft Studio", eventType: "Arts", directory: "/album/arts", fileUrl: ["/ips-education/assets/Settings/Home/Banner_6.jpg"] },
-      { eventName: "Hostel Premises", eventType: "Hostel", directory: "/album/hostel", fileUrl: ["/ips-education/assets/Settings/Home/Banner_7.jpg"] },
-      { eventName: "Open Green Playgrounds", eventType: "Sports", directory: "/album/sports", fileUrl: ["/ips-education/assets/Settings/Home/Banner_8.jpg"] },
+      { eventName: "School Entrance & Reception", eventType: "Banners", directory: "/album/banners", fileUrl: ["/Settings/Home/Banner_1.jpg"] },
+      { eventName: "Annual Athletic Sports Field", eventType: "Sports", directory: "/album/sports", fileUrl: ["/Settings/Home/Banner_2.jpg"] },
+      { eventName: "Cultural Festival Stage", eventType: "Events", directory: "/album/events", fileUrl: ["/Settings/Home/Banner_3.jpg"] },
+      { eventName: "Co-Curricular Student Center", eventType: "Activities", directory: "/album/activities", fileUrl: ["/Settings/Home/Banner_4.jpg"] },
+      { eventName: "Computer Science Center", eventType: "Campus", directory: "/album/campus", fileUrl: ["/Settings/Home/Banner_7.jpg"] },
+      { eventName: "Art & Craft Studio", eventType: "Arts", directory: "/album/arts", fileUrl: ["/Settings/Home/Banner_6.jpg"] },
+      { eventName: "Hostel Premises", eventType: "Hostel", directory: "/album/hostel", fileUrl: ["/Settings/Home/Banner_7.jpg"] },
+      { eventName: "Open Green Playgrounds", eventType: "Sports", directory: "/album/sports", fileUrl: ["/Settings/Home/Banner_8.jpg"] },
     ];
 
     DEFAULT_MEDIA_ITEMS.forEach((item, idx) => {
@@ -273,6 +274,7 @@ export class GalleryService {
           eventType: found.category || 'General',
           directory: `/album/${(found.category || 'General').toLowerCase()}`,
           fileUrl: [found.url],
+          mimeType: (found as any).mimeType || (found.format === 'pdf' ? 'application/pdf' : found.resourceType === 'video' ? `video/${found.format || 'mp4'}` : `image/${found.format || 'jpeg'}`),
           isCdnResource: true,
         };
       }
@@ -291,6 +293,7 @@ export class GalleryService {
         eventType: updateGalleryDto.eventType || 'General',
         directory: updateGalleryDto.directory || `/album/${(updateGalleryDto.eventType || 'General').toLowerCase()}`,
         fileUrl: updateGalleryDto.fileUrl || [],
+        mimeType: updateGalleryDto.mimeType,
       });
     }
 

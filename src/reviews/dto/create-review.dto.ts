@@ -27,7 +27,7 @@ export class CreateReviewDto {
   feedback: string;
 
   @ApiPropertyOptional({
-    example: '/public/assets/Review/Anonymous.png',
+    example: '/Review/Anonymous.png',
     description: 'Avatar image path or URL',
   })
   @IsOptional()

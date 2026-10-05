@@ -61,7 +61,7 @@ export class ReviewsService {
         rating: 3,
         feedback:
           'Great school. All the teachers we had cares about both academic and personal growth. We have 3 kids so we didn’t just get lucky. It’s a small enough school so kids don’t get lost but big enough to have all the extra curricular activities to keep kids busy and be social. Love, love, love this school.',
-        avatar: '/public/assets/Review/Anonymous.png',
+        avatar: '/Review/Anonymous.png',
         isApproved: true,
       },
       {
@@ -69,7 +69,7 @@ export class ReviewsService {
         batch: '2020-2022',
         rating: 5,
         feedback: 'good School, good environment.',
-        avatar: '/public/assets/Review/AbhishekPrakashJha.jpg',
+        avatar: '/Review/AbhishekPrakashJha.jpg',
         isApproved: true,
       },
       {
@@ -77,7 +77,7 @@ export class ReviewsService {
         batch: '2021-2022',
         rating: 5,
         feedback: 'Satisfied with studies and overall performance of the child.',
-        avatar: '/public/assets/Review/ShreyanshSekharJha.jpg',
+        avatar: '/Review/ShreyanshSekharJha.jpg',
         isApproved: true,
       },
       {
@@ -85,7 +85,7 @@ export class ReviewsService {
         batch: '2021-2022',
         rating: 3,
         feedback: 'Good studies and good overall performance .Good improvement shown .',
-        avatar: '/public/assets/Review/SmayPatlaSingh.jpg',
+        avatar: '/Review/SmayPatlaSingh.jpg',
         isApproved: true,
       },
     ];

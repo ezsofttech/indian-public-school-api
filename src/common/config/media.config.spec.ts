@@ -2,6 +2,7 @@ import {
   getMediaBaseUrl,
   toRelativeMediaPath,
   toFullMediaUrl,
+  buildCloudinaryMediaUrl,
   transformMediaUrlsToRelative,
   transformMediaPathsToFull,
 } from './media.config';
@@ -17,18 +18,13 @@ describe('MediaConfig', () => {
 
   describe('toRelativeMediaPath', () => {
     it('should strip Cloudinary domain & asset base prefix from full URL', () => {
-      const fullUrl = 'https://res.cloudinary.com/niefrrkx/ips-education/assets/Visual%20Editor%20Picked/file_avevn4.png';
+      const fullUrl = 'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Visual%20Editor%20Picked/file_avevn4.png';
       expect(toRelativeMediaPath(fullUrl)).toBe('/Visual%20Editor%20Picked/file_avevn4.png');
     });
 
     it('should handle full Cloudinary upload URLs', () => {
       const fullUrl = 'https://res.cloudinary.com/niefrrkx/image/upload/v1789163175/ips-education/assets/Home/hero-campus.jpg';
-      expect(toRelativeMediaPath(fullUrl)).toBe('/image/upload/v1789163175/ips-education/assets/Home/hero-campus.jpg');
-    });
-
-    it('should sanitize malformed URLs with /ips-education/assets/upload/', () => {
-      const malformedUrl = 'https://res.cloudinary.com/niefrrkx/ips-education/assets/upload/v1791186873/ips-education/assets/Student/file_dq6ang.png';
-      expect(toRelativeMediaPath(malformedUrl)).toBe('/image/upload/v1791186873/ips-education/assets/Student/file_dq6ang.png');
+      expect(toRelativeMediaPath(fullUrl)).toBe('/Home/hero-campus.jpg');
     });
 
     it('should preserve relative paths starting with /', () => {
@@ -37,25 +33,27 @@ describe('MediaConfig', () => {
     });
   });
 
+  describe('buildCloudinaryMediaUrl', () => {
+    it('should build full Cloudinary URL with cloud domain, upload prefix, root folder, and mongo relative path', () => {
+      const relative = '/Settings/Logos/IPSStandardLogo.png';
+      expect(buildCloudinaryMediaUrl(relative)).toBe(
+        'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Settings/Logos/IPSStandardLogo.png',
+      );
+    });
+
+    it('should use /video/upload for video files', () => {
+      const relative = '/Videos/campus-tour.mp4';
+      expect(buildCloudinaryMediaUrl(relative, 'video/mp4')).toBe(
+        'https://res.cloudinary.com/niefrrkx/video/upload/ips-education/assets/Videos/campus-tour.mp4',
+      );
+    });
+  });
+
   describe('toFullMediaUrl', () => {
-    it('should attach base URL prefix to relative path', () => {
-      const relative = '/Visual%20Editor%20Picked/file_avevn4.png';
+    it('should construct clean full Cloudinary URL', () => {
+      const relative = '/Settings/Logos/IPSStandardLogo.png';
       expect(toFullMediaUrl(relative)).toBe(
-        'https://res.cloudinary.com/niefrrkx/ips-education/assets/Visual%20Editor%20Picked/file_avevn4.png',
-      );
-    });
-
-    it('should handle /image/upload/ relative paths correctly', () => {
-      const relative = '/image/upload/v1789163175/ips-education/assets/Home/hero-campus.jpg';
-      expect(toFullMediaUrl(relative)).toBe(
-        'https://res.cloudinary.com/niefrrkx/image/upload/v1789163175/ips-education/assets/Home/hero-campus.jpg',
-      );
-    });
-
-    it('should sanitize malformed absolute URLs', () => {
-      const malformedUrl = 'https://res.cloudinary.com/niefrrkx/ips-education/assets/upload/v1791186873/ips-education/assets/Student/file_dq6ang.png';
-      expect(toFullMediaUrl(malformedUrl)).toBe(
-        'https://res.cloudinary.com/niefrrkx/image/upload/v1791186873/ips-education/assets/Student/file_dq6ang.png',
+        'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Settings/Logos/IPSStandardLogo.png',
       );
     });
 
@@ -69,9 +67,9 @@ describe('MediaConfig', () => {
     it('should convert object properties with full URLs to relative paths', () => {
       const payload = {
         name: 'Test Student',
-        avatarUrl: 'https://res.cloudinary.com/niefrrkx/ips-education/assets/avatar.png',
+        avatarUrl: 'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/avatar.png',
         nested: {
-          fileUrl: ['https://res.cloudinary.com/niefrrkx/ips-education/assets/doc.pdf'],
+          fileUrl: ['https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/doc.pdf'],
         },
       };
 
@@ -87,10 +85,11 @@ describe('MediaConfig', () => {
   });
 
   describe('transformMediaPathsToFull', () => {
-    it('should convert relative media paths in response objects to full URLs', () => {
+    it('should convert relative media paths in response objects to clean full Cloudinary URLs', () => {
       const responseData = {
         name: 'Test Student',
         avatarUrl: '/avatar.png',
+        mimeType: 'image/png',
         nested: {
           fileUrl: ['/doc.pdf'],
         },
@@ -99,9 +98,10 @@ describe('MediaConfig', () => {
       const result = transformMediaPathsToFull(responseData);
       expect(result).toEqual({
         name: 'Test Student',
-        avatarUrl: 'https://res.cloudinary.com/niefrrkx/ips-education/assets/avatar.png',
+        avatarUrl: 'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/avatar.png',
+        mimeType: 'image/png',
         nested: {
-          fileUrl: ['https://res.cloudinary.com/niefrrkx/ips-education/assets/doc.pdf'],
+          fileUrl: ['https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/doc.pdf'],
         },
       });
     });

@@ -49,7 +49,19 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
 
   async uploadFile(file: Express.Multer.File, folder?: string): Promise<UploadResult> {
     const rootFolder = getCloudinaryRootFolder(this.configService);
-    const resolvedFolder = folder || `${rootFolder}/assets`;
+    let resolvedFolder = folder ? folder.trim().replace(/^\/+|\/+$/g, '') : '';
+    const rootEndsWithAssets = rootFolder.toLowerCase().endsWith('/assets');
+
+    if (!resolvedFolder) {
+      resolvedFolder = rootEndsWithAssets ? rootFolder : `${rootFolder}/assets`;
+    } else if (!resolvedFolder.toLowerCase().startsWith(rootFolder.toLowerCase())) {
+      if (rootEndsWithAssets && resolvedFolder.toLowerCase().startsWith('assets/')) {
+        const subFolder = resolvedFolder.slice(7).replace(/^\/+/, '');
+        resolvedFolder = subFolder ? `${rootFolder}/${subFolder}` : rootFolder;
+      } else {
+        resolvedFolder = `${rootFolder}/${resolvedFolder}`;
+      }
+    }
     if (!file || !file.buffer || file.buffer.length === 0) {
       throw new BadRequestException('Empty file or missing file buffer provided');
     }
@@ -111,6 +123,7 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
               url: relativePath,
               key: result.public_id,
               provider: 'cloudinary',
+              mimeType: file.mimetype,
             });
           },
         );
@@ -215,7 +228,19 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
 
   async listResources(folder?: string): Promise<Array<{ id: string; url: string; title: string; category: string; resourceType: string; format: string }>> {
     const rootFolder = getCloudinaryRootFolder(this.configService);
-    const targetFolder = folder || rootFolder;
+    let targetFolder = folder ? folder.trim().replace(/^\/+|\/+$/g, '') : '';
+    const rootEndsWithAssets = rootFolder.toLowerCase().endsWith('/assets');
+
+    if (!targetFolder) {
+      targetFolder = rootFolder;
+    } else if (!targetFolder.toLowerCase().startsWith(rootFolder.toLowerCase())) {
+      if (rootEndsWithAssets && targetFolder.toLowerCase().startsWith('assets/')) {
+        const subFolder = targetFolder.slice(7).replace(/^\/+/, '');
+        targetFolder = subFolder ? `${rootFolder}/${subFolder}` : rootFolder;
+      } else {
+        targetFolder = `${rootFolder}/${targetFolder}`;
+      }
+    }
     const cacheKey = targetFolder || '__ALL__';
     const cached = this.cache.get(cacheKey);
     const now = Date.now();

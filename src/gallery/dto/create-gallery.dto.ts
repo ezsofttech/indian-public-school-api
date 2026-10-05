@@ -46,5 +46,13 @@ export class CreateGalleryDto {
   @IsString({ each: true })
   @IsOptional()
   fileUrl?: string[];
+
+  @ApiPropertyOptional({
+    example: 'image/jpeg',
+    description: 'MIME content type of the asset file (e.g. image/jpeg, application/pdf, video/mp4)',
+  })
+  @IsOptional()
+  @IsString()
+  mimeType?: string;
 }
 

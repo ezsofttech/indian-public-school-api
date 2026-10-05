@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
 /**
- * Returns the base Cloudinary domain without root folder suffix (e.g. https://res.cloudinary.com/niefrrkx).
+ * Returns the base Cloudinary domain dynamically from configuration or environment.
  */
 export function getCloudinaryCloudBaseUrl(configService?: ConfigService): string {
   const cloudName =
@@ -13,221 +13,157 @@ export function getCloudinaryCloudBaseUrl(configService?: ConfigService): string
 }
 
 /**
- * Returns the base URL prefix for media assets without a trailing slash.
- * Default: https://res.cloudinary.com/niefrrkx/ips-education/assets
- */
-export function getMediaBaseUrl(configService?: ConfigService): string {
-  const envUrl =
-    configService?.get<string>('MEDIA_BASE_URL') ||
-    process.env.MEDIA_BASE_URL;
-
-  if (envUrl && envUrl.trim()) {
-    return envUrl.trim().replace(/\/+$/, '');
-  }
-
-  const cloudBase = getCloudinaryCloudBaseUrl(configService);
-  const rootFolder = getCloudinaryRootFolder(configService);
-
-  return `${cloudBase}/${rootFolder}/assets`;
-}
-
-/**
- * Returns the configured root folder in Cloudinary.
- * Default: ips-education
+ * Returns the configured root folder dynamically from configuration or environment.
  */
 export function getCloudinaryRootFolder(configService?: ConfigService): string {
   const envFolder =
     configService?.get<string>('CLOUDINARY_ROOT_FOLDER') ||
     process.env.CLOUDINARY_ROOT_FOLDER;
 
-  if (envFolder && envFolder.trim()) {
-    return envFolder.trim().replace(/^\/+|\/+$/g, '');
-  }
-
-  return 'ips-education';
+  return envFolder && envFolder.trim() ? envFolder.trim().replace(/^\/+|\/+$/g, '') : 'ips-education';
 }
 
 /**
- * Format event names to a readable, pretty form (no underscores, hyphens, camelCase split, path deduplication, or trailing index suffixes).
+ * Returns the base URL prefix for media assets dynamically.
+ */
+export function getMediaBaseUrl(configService?: ConfigService): string {
+  const envUrl = configService?.get<string>('MEDIA_BASE_URL') || process.env.MEDIA_BASE_URL;
+  if (envUrl && envUrl.trim() && !envUrl.includes('res.cloudinary.com')) return envUrl.trim().replace(/\/+$/, '');
+
+  const cloudBase = getCloudinaryCloudBaseUrl(configService);
+  const rootFolder = getCloudinaryRootFolder(configService);
+
+  const rootPath = rootFolder.toLowerCase().replace(/\/+$/, '').endsWith('/assets')
+    ? rootFolder
+    : `${rootFolder}/assets`;
+
+  return `${cloudBase}/${rootPath}`;
+}
+
+/**
+ * Format event names to a readable, pretty form.
  */
 export function formatPrettyEventName(name?: unknown): string {
-  if (typeof name !== 'string' || !name.trim()) {
-    return typeof name === 'string' ? name : '';
-  }
+  if (typeof name !== 'string' || !name.trim()) return typeof name === 'string' ? name : '';
   let s = name.trim();
 
-  // Handle paths with slashes e.g. "AmarRathore/AmarRathore" => "AmarRathore"
   if (s.includes('/')) {
     const parts = s.split('/').map((p) => p.trim()).filter(Boolean);
     s = parts[parts.length - 1] || s;
   }
 
-  // Remove trailing index numbers like "_1", "_2", "-1", "-2" (e.g. "Art_1" => "Art")
   s = s.replace(/([A-Za-z]+)[_-](\d{1,2})$/g, '$1');
-
-  // Insert space into camelCase (e.g. "AmarRathore" => "Amar Rathore")
   s = s.replace(/([a-z])([A-Z])/g, '$1 $2');
-
-  // Replace underscores and hyphens with single spaces
   s = s.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
 
   return s
     .split(' ')
     .map((word) => {
       if (!word) return '';
-      if (/^(cbse|noc|ips|pdf|tc|gsc|id|doc)$/i.test(word)) {
-        return word.toUpperCase();
-      }
+      if (/^(cbse|noc|ips|pdf|tc|gsc|id|doc)$/i.test(word)) return word.toUpperCase();
       return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
     })
     .join(' ');
 }
 
 /**
- * Strips the media host / Cloudinary / /assets prefix from a URL to store a clean relative path in DB.
- * E.g. "https://res.cloudinary.com/niefrrkx/ips-education/assets/Gallery/pic.jpg" => "/Gallery/pic.jpg"
- * E.g. "https://res.cloudinary.com/niefrrkx/image/upload/v1234/ips-education/assets/Student/pic.jpg" => "/image/upload/v1234/ips-education/assets/Student/pic.jpg"
+ * Strips host, upload prefix, and root folder from a URL to store a clean relative path in DB.
  */
-export function toRelativeMediaPath(
-  urlOrPath: unknown,
-  configService?: ConfigService,
-): unknown {
-  if (typeof urlOrPath !== 'string' || !urlOrPath.trim()) {
-    return urlOrPath;
-  }
+export function toRelativeMediaPath(pathOrUrl: unknown, configService?: ConfigService): unknown {
+  if (typeof pathOrUrl !== 'string' || !pathOrUrl.trim()) return pathOrUrl;
 
-  let trimmed = urlOrPath.trim()
-    .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'assets/Videos/')
-    .replace(/(?:Videos\/)+Videos\//gi, 'Videos/');
-
-  // If HTTP/HTTPS absolute URL
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    // Sanitize any malformed URLs where /assets/upload/ or /ips-education/assets/upload/ was prepended
-    trimmed = trimmed
-      .replace(/\/(?:ips-education|indian-public-school)\/assets\/upload\//gi, '/image/upload/')
-      .replace(/\/assets\/upload\//gi, '/image/upload/')
-      .replace(/\/assets\/assets\//gi, '/assets/')
-      .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'assets/Videos/');
-
-    try {
-      const baseUrl = getMediaBaseUrl(configService);
-
-      if (trimmed.startsWith(baseUrl)) {
-        trimmed = trimmed.slice(baseUrl.length);
-      } else {
-        const cloudBaseUrl = getCloudinaryCloudBaseUrl(configService);
-        if (trimmed.startsWith(cloudBaseUrl)) {
-          trimmed = trimmed.slice(cloudBaseUrl.length);
-        } else {
-          const cloudMatch = trimmed.match(
-            /^https?:\/\/res\.cloudinary\.com\/[^/]+(\/.*)$/i,
-          );
-          if (cloudMatch && cloudMatch[1]) {
-            trimmed = cloudMatch[1];
-          }
-        }
-      }
-    } catch {
-      return trimmed;
+  let path = pathOrUrl.trim();
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    const cloudBase = getCloudinaryCloudBaseUrl(configService);
+    if (cloudBase && path.startsWith(cloudBase)) {
+      path = path.slice(cloudBase.length);
+    } else {
+      const match = path.match(/^https?:\/\/res\.cloudinary\.com\/[^/]+(\/.*)$/i);
+      if (match?.[1]) path = match[1];
     }
   }
 
-  if (!trimmed.startsWith('/')) {
-    trimmed = '/' + trimmed;
+  const rootFolder = getCloudinaryRootFolder(configService);
+  const escapedRoot = rootFolder ? rootFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+
+  let clean = path.replace(/^\/(?:image|video|raw)\/upload\/(?:v\d+\/)?/i, '/');
+
+  if (escapedRoot) {
+    clean = clean.replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/');
   }
 
-  // Only strip root folder / assets if it's NOT an /image/upload, /video/upload, /raw/upload, or /upload path
-  if (!/^\/(?:image|video|raw)?\/?upload\//i.test(trimmed)) {
-    trimmed = trimmed
-      .replace(/^\/(ips-education|indian-public-school)\/assets\//i, '/')
-      .replace(/^\/(ips-education|indian-public-school)\//i, '/')
-      .replace(/^\/assets\//i, '/');
-  }
+  // Generic fallback replacement for root folder / assets
+  clean = clean
+    .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
+    .replace(/^\/assets\//i, '/');
 
-  return trimmed;
+  return clean.startsWith('/') ? clean : `/${clean}`;
 }
 
 /**
- * Attaches the media base URL prefix to a relative media path for API responses.
- * Ensures valid Cloudinary delivery URLs without malformed prefix duplication.
+ * Clean, centralized helper to construct full Cloudinary URL dynamically for API responses.
+ * Formula: [Cloudinary Domain] + [Upload Prefix] + [CLOUDINARY_ROOT_FOLDER] + [Relative Path]
  */
 export function toFullMediaUrl(
   pathOrUrl: unknown,
+  mimeTypeOrConfig?: string | ConfigService,
   configService?: ConfigService,
 ): unknown {
-  if (typeof pathOrUrl !== 'string' || !pathOrUrl.trim()) {
-    return pathOrUrl;
+  if (typeof pathOrUrl !== 'string' || !pathOrUrl.trim()) return pathOrUrl;
+
+  let path = pathOrUrl.trim();
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    if (!path.includes('res.cloudinary.com')) return path;
+    const cfg = typeof mimeTypeOrConfig === 'object' ? mimeTypeOrConfig : configService;
+    const rootFolder = getCloudinaryRootFolder(cfg);
+    if (rootFolder) {
+      const escapedRoot = rootFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      path = path.replace(new RegExp(`\\/${escapedRoot}\\/upload\\/`, 'gi'), '/image/upload/');
+    }
+    return path;
   }
 
-  let trimmed = pathOrUrl.trim()
-    .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'assets/Videos/')
-    .replace(/(?:Videos\/)+Videos\//gi, 'Videos/');
+  const mimeType = typeof mimeTypeOrConfig === 'string' ? mimeTypeOrConfig : undefined;
+  const cfg = typeof mimeTypeOrConfig === 'object' ? mimeTypeOrConfig : configService;
 
-  // If already absolute URL, clean any accidental malformed patterns inside URL
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed
-      .replace(/\/(?:ips-education|indian-public-school)\/assets\/upload\//gi, '/image/upload/')
-      .replace(/\/assets\/upload\//gi, '/image/upload/')
-      .replace(/\/assets\/assets\//gi, '/assets/')
-      .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'assets/Videos/');
+  const cloudBase = getCloudinaryCloudBaseUrl(cfg);
+  const rootFolder = getCloudinaryRootFolder(cfg);
+  const rootPath = rootFolder.toLowerCase().replace(/\/+$/, '').endsWith('/assets')
+    ? rootFolder
+    : `${rootFolder}/assets`;
+
+  let prefix = '/image/upload';
+  const lowerMime = (mimeType || '').toLowerCase();
+  if (lowerMime.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(path)) prefix = '/video/upload';
+  else if (lowerMime.startsWith('raw/') || /\.(doc|docx|xls|xlsx|zip|csv)$/i.test(path)) prefix = '/raw/upload';
+
+  const escapedRoot = rootPath ? rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+  let cleanPath = path.replace(/^\/(?:image|video|raw)\/upload\/(?:v\d+\/)?/i, '/');
+  
+  if (escapedRoot) {
+    cleanPath = cleanPath.replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/');
+  }
+  cleanPath = cleanPath
+    .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
+    .replace(/^\/assets\//i, '/');
+
+  const normalized = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
+
+  const envUrl = cfg?.get<string>('MEDIA_BASE_URL') || process.env.MEDIA_BASE_URL;
+  if (envUrl && envUrl.trim() && !envUrl.includes('res.cloudinary.com')) {
+    return `${envUrl.trim().replace(/\/+$/, '')}${normalized}`;
   }
 
-  const cloudBaseUrl = getCloudinaryCloudBaseUrl(configService);
-
-  // If path starts with /image/upload/, /video/upload/, /raw/upload/, /upload/
-  if (/^\/(?:image|video|raw)\/upload\//i.test(trimmed)) {
-    return `${cloudBaseUrl}${trimmed}`;
-  }
-
-  if (/^\/upload\//i.test(trimmed)) {
-    return `${cloudBaseUrl}/image${trimmed}`;
-  }
-
-  const baseUrl = getMediaBaseUrl(configService);
-
-  // If baseUrl already ends with '/assets' (case-insensitive)
-  if (baseUrl.toLowerCase().endsWith('/assets')) {
-    trimmed = trimmed
-      .replace(/^\/(ips-education|indian-public-school)\/assets\//i, '/')
-      .replace(/^\/(ips-education|indian-public-school)\//i, '/')
-      .replace(/^\/assets\//i, '/')
-      .replace(/^assets\//i, '/');
-  } else if (baseUrl.toLowerCase().includes('/ips-education')) {
-    trimmed = trimmed.replace(/^\/(ips-education|indian-public-school)\//i, '/');
-  }
-
-  if (!trimmed.startsWith('/')) {
-    trimmed = '/' + trimmed;
-  }
-
-  return `${baseUrl}${trimmed}`;
+  return `${cloudBase}${prefix}/${rootPath}${normalized}`;
 }
 
-const MEDIA_FILE_EXTENSIONS =
-  /\.(png|jpg|jpeg|gif|webp|svg|pdf|mp4|webm|mov|doc|docx|xls|xlsx|csv|zip)$/i;
+export const buildCloudinaryMediaUrl = toFullMediaUrl;
 
+const MEDIA_FILE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|svg|pdf|mp4|webm|mov|doc|docx|xls|xlsx|csv|zip)$/i;
 const MEDIA_PROPERTY_KEYS = new Set([
-  'fileUrl',
-  'url',
-  'avatar',
-  'avatarUrl',
-  'profileImageUrl',
-  'marksheetUrl',
-  'imageUrl',
-  'photo',
-  'logo',
-  'banner',
-  'attachment',
-  'attachmentUrl',
-  'resume',
-  'file',
-  'heroImage',
-  'thumbnail',
-  'coverImage',
-  'mediaUrl',
-  'icon',
-  'src',
-  'path',
+  'fileUrl', 'url', 'avatar', 'avatarUrl', 'profileImageUrl', 'marksheetUrl',
+  'imageUrl', 'photo', 'logo', 'banner', 'attachment', 'attachmentUrl',
+  'resume', 'file', 'heroImage', 'thumbnail', 'coverImage', 'mediaUrl', 'icon', 'src', 'path',
 ]);
 
 /**
@@ -244,52 +180,26 @@ export function transformMediaUrlsToRelative<T>(
 
   if (typeof obj === 'string') {
     const trimmed = obj.trim();
-    const isAbsoluteMediaUrl =
-      trimmed.startsWith('http://') || trimmed.startsWith('https://');
-    const isMediaProp = parentKey && MEDIA_PROPERTY_KEYS.has(parentKey);
-    const isMediaExt = MEDIA_FILE_EXTENSIONS.test(trimmed);
-    const isMediaPrefix =
-      trimmed.startsWith('/ips-education') ||
-      trimmed.startsWith('/indian-public-school') ||
-      trimmed.startsWith('/assets/');
-
-    if (isAbsoluteMediaUrl || isMediaProp || isMediaExt || isMediaPrefix) {
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || (parentKey && MEDIA_PROPERTY_KEYS.has(parentKey)) || MEDIA_FILE_EXTENSIONS.test(trimmed)) {
       return toRelativeMediaPath(trimmed, configService) as unknown as T;
     }
     return obj as unknown as T;
   }
 
   if (Array.isArray(obj)) {
-    return obj.map((item) =>
-      transformMediaUrlsToRelative(item, configService, seen, depth + 1, parentKey),
-    ) as unknown as T;
+    return obj.map((item) => transformMediaUrlsToRelative(item, configService, seen, depth + 1, parentKey)) as unknown as T;
   }
 
   if (typeof obj === 'object') {
     if (seen.has(obj as object)) return obj;
-    const constructorName = (obj as any).constructor?.name;
-    if (
-      constructorName &&
-      constructorName !== 'Object' &&
-      constructorName !== 'Array'
-    ) {
-      return obj;
-    }
+    if ((obj as any).constructor?.name && (obj as any).constructor.name !== 'Object' && (obj as any).constructor.name !== 'Array') return obj;
     seen.add(obj as object);
 
     const transformed: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-      if (key === 'eventName' && typeof value === 'string') {
-        transformed[key] = formatPrettyEventName(value);
-      } else {
-        transformed[key] = transformMediaUrlsToRelative(
-          value,
-          configService,
-          seen,
-          depth + 1,
-          key,
-        );
-      }
+      transformed[key] = key === 'eventName' && typeof value === 'string'
+        ? formatPrettyEventName(value)
+        : transformMediaUrlsToRelative(value, configService, seen, depth + 1, key);
     }
     return transformed as unknown as T;
   }
@@ -298,7 +208,7 @@ export function transformMediaUrlsToRelative<T>(
 }
 
 /**
- * Recursively attach prefixes to relative media paths (for Response processing) and format eventName.
+ * Recursively attach prefixes to relative media paths (for Response processing).
  */
 export function transformMediaPathsToFull<T>(
   obj: T,
@@ -306,21 +216,18 @@ export function transformMediaPathsToFull<T>(
   seen = new WeakSet<object>(),
   depth = 0,
   parentKey?: string,
+  parentMimeType?: string,
 ): T {
   if (obj === null || obj === undefined || depth > 15) return obj;
 
   if (typeof obj === 'string') {
-    if (parentKey === 'eventName') {
-      return formatPrettyEventName(obj) as unknown as T;
-    }
+    if (parentKey === 'eventName') return formatPrettyEventName(obj) as unknown as T;
 
     const trimmed = obj.trim();
     if (trimmed.startsWith('/')) {
       const rootFolder = getCloudinaryRootFolder(configService);
       const isMediaPrefix =
-        trimmed.startsWith(`/${rootFolder}`) ||
-        trimmed.startsWith('/ips-education') ||
-        trimmed.startsWith('/indian-public-school') ||
+        (rootFolder && trimmed.startsWith(`/${rootFolder}`)) ||
         trimmed.startsWith('/assets') ||
         trimmed.startsWith('/Gallery') ||
         trimmed.startsWith('/Album') ||
@@ -328,53 +235,36 @@ export function transformMediaPathsToFull<T>(
         trimmed.startsWith('/Settings') ||
         trimmed.startsWith('/Videos') ||
         trimmed.startsWith('/image/upload') ||
+        trimmed.startsWith('/video/upload') ||
+        trimmed.startsWith('/raw/upload') ||
         trimmed.startsWith('/uploads');
 
-      const isMediaExt = MEDIA_FILE_EXTENSIONS.test(trimmed);
-      const isMediaProp = parentKey && MEDIA_PROPERTY_KEYS.has(parentKey);
-
-      if (isMediaPrefix || isMediaExt || isMediaProp) {
-        return toFullMediaUrl(trimmed, configService) as unknown as T;
+      if (isMediaPrefix || MEDIA_FILE_EXTENSIONS.test(trimmed) || (parentKey && MEDIA_PROPERTY_KEYS.has(parentKey))) {
+        return toFullMediaUrl(trimmed, parentMimeType, configService) as unknown as T;
       }
     }
     return obj as unknown as T;
   }
 
   if (Array.isArray(obj)) {
-    return obj.map((item) =>
-      transformMediaPathsToFull(item, configService, seen, depth + 1, parentKey),
-    ) as unknown as T;
+    return obj.map((item) => transformMediaPathsToFull(item, configService, seen, depth + 1, parentKey, parentMimeType)) as unknown as T;
   }
 
   if (typeof obj === 'object') {
     if (seen.has(obj as object)) return obj;
-    const constructorName = (obj as any).constructor?.name;
-    if (
-      constructorName &&
-      constructorName !== 'Object' &&
-      constructorName !== 'Array'
-    ) {
-      return obj;
-    }
+    if ((obj as any).constructor?.name && (obj as any).constructor.name !== 'Object' && (obj as any).constructor.name !== 'Array') return obj;
     seen.add(obj as object);
+
+    const extractedMime = (obj as any).mimeType || (obj as any).mimetype || (obj as any).mime;
 
     const transformed: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-      if (key === 'eventName' && typeof value === 'string') {
-        transformed[key] = formatPrettyEventName(value);
-      } else {
-        transformed[key] = transformMediaPathsToFull(
-          value,
-          configService,
-          seen,
-          depth + 1,
-          key,
-        );
-      }
+      transformed[key] = key === 'eventName' && typeof value === 'string'
+        ? formatPrettyEventName(value)
+        : transformMediaPathsToFull(value, configService, seen, depth + 1, key, extractedMime);
     }
     return transformed as unknown as T;
   }
 
   return obj;
 }
-

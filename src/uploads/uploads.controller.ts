@@ -62,11 +62,15 @@ export class UploadsController {
     @Body('altText') altText?: string,
   ) {
     const rootFolder = getCloudinaryRootFolder();
+    const defaultFolder = rootFolder.toLowerCase().endsWith('/assets')
+      ? `${rootFolder}/Documents/Admission`
+      : `${rootFolder}/assets/Documents/Admission`;
+
     return this.uploadsService.upload(
       file,
       album || 'AdmissionDocuments',
       altText,
-      folder || `${rootFolder}/assets/Documents/Admission`,
+      folder || defaultFolder,
     );
   }
 
