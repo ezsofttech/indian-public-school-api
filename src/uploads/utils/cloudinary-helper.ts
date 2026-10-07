@@ -17,8 +17,9 @@ export function extractCloudinaryPublicId(url: string): string | null {
 
   // If it's already a Cloudinary public ID or key without http(s)://
   if (!decodedUrl.startsWith('http://') && !decodedUrl.startsWith('https://')) {
+    const cleanPath = decodedUrl.replace(/^\/+/, '');
     // Remove extension if present, but keep folder hierarchy
-    return decodedUrl.replace(/\.[a-zA-Z0-9]+$/, '');
+    return cleanPath.replace(/\.[a-zA-Z0-9]+$/, '');
   }
 
   // Fallback: extract last filename part if full URL couldn't match /upload/

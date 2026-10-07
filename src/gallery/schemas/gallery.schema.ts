@@ -42,6 +42,9 @@ export class Gallery {
   @Prop({ type: [String], required: false, default: [] })
   fileUrl?: string[];
 
+  @Prop({ trim: true, required: false })
+  mimeType?: string;
+
   @Prop({ type: Date, default: null })
   deletedAt?: Date;
 }

@@ -4,6 +4,7 @@ export interface UploadResult {
   url: string;
   key: string;
   provider: 'cloudinary' | 'local' | 's3' | 'r2';
+  mimeType?: string;
 }
 
 export interface IStorageStrategy {

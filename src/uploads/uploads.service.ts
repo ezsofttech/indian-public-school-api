@@ -6,6 +6,7 @@ import { GalleryRepository } from '../gallery/gallery.repository';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { extractCloudinaryPublicId, formatFileSizeErrorMessage } from './utils/cloudinary-helper';
 import { FileCompressorService } from './services/file-compressor.service';
+import { toRelativeMediaPath, getCloudinaryRootFolder } from '../common/config';
 
 @Injectable()
 export class UploadsService {
@@ -57,41 +58,71 @@ export class UploadsService {
       processedFile.originalname.toLowerCase().endsWith('.pdf') ||
       (!processedFile.mimetype.startsWith('image/') && !processedFile.mimetype.startsWith('video/'));
 
+    const rootFolder = getCloudinaryRootFolder(this.configService);
+    const assetsPrefix = rootFolder.toLowerCase().replace(/\/+$/, '').endsWith('/assets')
+      ? rootFolder
+      : `${rootFolder}/assets`;
+
     const rawFolderInput = (folder || '').trim();
     const rawAlbumInput = (album || '').trim();
-    const lowerFolder = rawFolderInput.toLowerCase();
+
+    // Deduplicate and sanitize folder input to avoid nested ips-education/assets/assets/Videos paths
+    const cleanRawFolder = rawFolderInput
+      .replace(/(?:assets\/Videos\/)+assets\/Videos\//gi, 'Videos/')
+      .replace(/(?:Videos\/)+Videos\//gi, 'Videos/');
+    const lowerFolder = cleanRawFolder.toLowerCase();
     const lowerAlbum = rawAlbumInput.toLowerCase();
 
-    const isSettingsUpload =
-      lowerFolder.includes('settings') ||
-      lowerAlbum.includes('settings') ||
-      lowerFolder.includes('school-settings') ||
-      lowerAlbum.includes('school-settings');
-
     let targetFolder: string;
-    if (isSettingsUpload) {
-      targetFolder = 'indian-public-school/assets/Settings';
-    } else if (rawFolderInput) {
-      let rawFolder = rawFolderInput.replace(/^\/+/, '');
-      if (rawFolder.toLowerCase().startsWith('album/')) {
-        const subFolder = rawFolder.replace(/^album\//i, '');
-        const formattedSub = subFolder ? subFolder.charAt(0).toUpperCase() + subFolder.slice(1) : 'General';
-        targetFolder = `indian-public-school/assets/${formattedSub}`;
-      } else if (rawFolder.toLowerCase().startsWith('indian-public-school/assets/')) {
-        targetFolder = rawFolder;
-      } else if (!rawFolder.includes('/')) {
-        const formattedName = rawFolder.charAt(0).toUpperCase() + rawFolder.slice(1);
-        targetFolder = `indian-public-school/assets/${formattedName}`;
-      } else {
-        targetFolder = rawFolder;
-      }
-    } else if (album && album !== 'General' && album !== 'Galleries' && album !== 'Gallery') {
-      targetFolder = `indian-public-school/assets/${album}`;
+
+    if (lowerFolder.startsWith(`${rootFolder.toLowerCase()}/`)) {
+      targetFolder = cleanRawFolder;
+    } else if (lowerFolder.includes('/assets/')) {
+      const sub = cleanRawFolder.replace(/^.*\/assets\//i, '');
+      targetFolder = `${assetsPrefix}/${sub}`;
+    } else if (lowerFolder.startsWith('assets/')) {
+      const sub = cleanRawFolder.replace(/^assets\//i, '');
+      targetFolder = `${assetsPrefix}/${sub}`;
+    } else if (lowerFolder.includes('logos') || lowerAlbum.includes('logos')) {
+      targetFolder = `${assetsPrefix}/Settings/Logos`;
+    } else if (lowerFolder.includes('settings') || lowerAlbum.includes('settings') || lowerFolder.includes('school-settings') || lowerAlbum.includes('school-settings')) {
+      targetFolder = `${assetsPrefix}/Settings/Home`;
+    } else if (lowerFolder.includes('career') || lowerAlbum.includes('career')) {
+      targetFolder = `${assetsPrefix}/Documents/Career`;
+    } else if (lowerFolder.includes('admission') || lowerAlbum.includes('admission')) {
+      targetFolder = `${assetsPrefix}/Documents/Admission`;
+    } else if (lowerFolder.includes('pressrelease') || lowerFolder.includes('press') || lowerAlbum.includes('press')) {
+      targetFolder = `${assetsPrefix}/PressRelease`;
+    } else if (lowerFolder.includes('student') || lowerAlbum.includes('student')) {
+      targetFolder = `${assetsPrefix}/Student`;
+    } else if (lowerFolder.includes('staff') || lowerAlbum.includes('staff')) {
+      targetFolder = isDoc ? `${assetsPrefix}/Documents/Staff` : `${assetsPrefix}/Staff`;
+    } else if (processedFile.mimetype.startsWith('video/') || lowerFolder.includes('video') || lowerAlbum.includes('video')) {
+      targetFolder = `${assetsPrefix}/Videos`;
     } else if (isDoc) {
-      targetFolder = `indian-public-school/assets/Documents`;
+      targetFolder = `${assetsPrefix}/Documents/General`;
+    } else if (cleanRawFolder) {
+      const cleanFolder = cleanRawFolder.replace(/^\/+|\/+$/g, '').replace(/^assets\//i, '');
+      if (cleanFolder.toLowerCase().startsWith('album/')) {
+        const sub = cleanFolder.replace(/^album\//i, '');
+        const formattedSub = sub ? sub.charAt(0).toUpperCase() + sub.slice(1) : 'General';
+        targetFolder = `${assetsPrefix}/Album/${formattedSub}`;
+      } else {
+        targetFolder = `${assetsPrefix}/${cleanFolder}`;
+      }
+    } else if (rawAlbumInput && rawAlbumInput !== 'General' && rawAlbumInput !== 'Galleries' && rawAlbumInput !== 'Gallery') {
+      targetFolder = `${assetsPrefix}/Album/${rawAlbumInput}`;
     } else {
-      targetFolder = `indian-public-school/assets/General`;
+      targetFolder = `${assetsPrefix}/Album`;
     }
+
+    // Final check: Guarantee no duplicate ips-education/assets/assets/ or assets/assets/ in targetFolder
+    targetFolder = targetFolder
+      .replace(/\/ips-education\/assets\/ips-education\/assets\//gi, '/ips-education/assets/')
+      .replace(/\/ips-education\/assets\/assets\//gi, '/ips-education/assets/')
+      .replace(/^ips-education\/assets\/assets\//gi, 'ips-education/assets/')
+      .replace(/\/assets\/assets\//gi, '/assets/')
+      .replace(/^assets\/assets\//gi, 'assets/');
 
     let result: import('./strategies/storage-strategy.interface').UploadResult;
 
@@ -110,35 +141,34 @@ export class UploadsService {
     else if (processedFile.mimetype.startsWith('video/')) fileType = 'video';
     else if (processedFile.mimetype === 'application/pdf') fileType = 'pdf';
 
+    const isSettingsUpload = targetFolder.includes('/Settings/');
     const eventType = isSettingsUpload
       ? 'Settings'
       : isDoc
       ? (album && album !== 'General' ? album : 'Documents')
       : (album || 'General');
 
-    const directoryPath = isSettingsUpload
-      ? 'indian-public-school/assets/Settings'
-      : folder && folder.trim()
-      ? (folder.trim().startsWith('/') ? folder.trim() : `/${folder.trim()}`)
-      : isDoc
-      ? 'indian-public-school/assets/Documents'
-      : `/album/${(album || 'General').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    const directoryPath = targetFolder;
 
     const computedEventName = altText && altText.trim() ? altText.trim() : eventType;
 
+    const relativeUrl = toRelativeMediaPath(result.url, this.configService) as string;
+
     const asset = await this.galleryRepository.create({
       eventName: computedEventName,
-      fileUrl: [result.url],
+      fileUrl: [relativeUrl],
       eventType: eventType,
       directory: directoryPath,
+      mimeType: processedFile.mimetype,
     });
 
     const plainAsset = typeof (asset as any).toObject === 'function' ? (asset as any).toObject() : asset;
 
     return {
       ...plainAsset,
-      url: result.url,
-      fileUrl: asset.fileUrl || [result.url],
+      url: relativeUrl,
+      fileUrl: asset.fileUrl || [relativeUrl],
+      mimeType: asset.mimeType || processedFile.mimetype,
       key: result.key,
       provider: result.provider,
     };

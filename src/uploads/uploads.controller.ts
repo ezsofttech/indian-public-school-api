@@ -16,6 +16,7 @@ import { UploadsService } from './uploads.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiTags, ApiConsumes, ApiBody, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { getCloudinaryRootFolder } from '../common/config';
 
 @ApiTags('Uploads')
 @Controller('v1/uploads')
@@ -60,11 +61,16 @@ export class UploadsController {
     @Body('folder') folder?: string,
     @Body('altText') altText?: string,
   ) {
+    const rootFolder = getCloudinaryRootFolder();
+    const defaultFolder = rootFolder.toLowerCase().endsWith('/assets')
+      ? `${rootFolder}/Documents/Admission`
+      : `${rootFolder}/assets/Documents/Admission`;
+
     return this.uploadsService.upload(
       file,
       album || 'AdmissionDocuments',
       altText,
-      folder || 'indian-public-school/assets/AdmissionDocuments',
+      folder || defaultFolder,
     );
   }
 

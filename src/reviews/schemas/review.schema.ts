@@ -26,7 +26,7 @@ export class Review {
   @Prop({ required: true })
   feedback!: string;
 
-  @Prop({ default: '/public/assets/Review/Anonymous.png' })
+  @Prop({ default: '/Review/Anonymous.png' })
   avatar!: string;
 
   @Prop({ default: true })

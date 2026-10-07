@@ -7,7 +7,6 @@ import { AuthModule } from './auth/auth.module';
 import { StudentsModule } from './students/students.module';
 import { StaffModule } from './staff/staff.module';
 import { GalleryModule } from './gallery/gallery.module';
-import { NoticeBoardModule } from './notice-board/notice-board.module';
 import { SchoolSettingsModule } from './school-settings/school-settings.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { MenuItemsModule } from './menu-items/menu-items.module';
@@ -42,7 +41,6 @@ import { NotificationsModule } from './notifications/notifications.module';
     StudentsModule,
     StaffModule,
     GalleryModule,
-    NoticeBoardModule,
     SchoolSettingsModule,
     UploadsModule,
     MenuItemsModule,

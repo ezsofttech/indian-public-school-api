@@ -7,6 +7,10 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
+import {
+  transformMediaUrlsToRelative,
+  transformMediaPathsToFull,
+} from '../config';
 
 export interface ResponseFormat<T> {
   statusCode: number;
@@ -107,10 +111,15 @@ export class TransformInterceptor<T> implements NestInterceptor<
     context: ExecutionContext,
     next: CallHandler<T>,
   ): Observable<ResponseFormat<T>> {
-    const response = context
-      .switchToHttp()
-      .getResponse<{ statusCode?: number }>();
-    const request = context.switchToHttp().getRequest<{ method: string }>();
+    const httpContext = context.switchToHttp();
+    const response = httpContext.getResponse<{ statusCode?: number }>();
+    const request = httpContext.getRequest<{ method: string; body?: any }>();
+
+    // Request time: transform incoming payload to relative media paths
+    if (request && request.body && typeof request.body === 'object') {
+      request.body = transformMediaUrlsToRelative(request.body);
+    }
+
     const statusCode = response.statusCode ?? HttpStatus.OK;
     const method = request.method;
     const messageByMethod: Record<string, string> = {
@@ -129,13 +138,16 @@ export class TransformInterceptor<T> implements NestInterceptor<
             ? getResponseData(serializedData as Record<string, unknown>)
             : { data: serializedData, meta: null };
 
+        // Response time: attach prefix to relative media paths
+        const transformedData = transformMediaPathsToFull(responseData.data);
+
         return {
           statusCode,
           status: statusCode,
           success: true,
           message:
             messageByMethod[method] ?? 'Operation completed successfully',
-          data: responseData.data as T,
+          data: transformedData as T,
           meta: responseData.meta,
           timestamp: new Date().toISOString(),
         };
@@ -143,4 +155,5 @@ export class TransformInterceptor<T> implements NestInterceptor<
     );
   }
 }
+
 

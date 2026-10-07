@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { IStorageStrategy, UploadResult } from './storage-strategy.interface';
 import { formatFileSizeErrorMessage } from '../utils/cloudinary-helper';
+import { toRelativeMediaPath, getCloudinaryRootFolder } from '../../common/config';
 
 @Injectable()
 export class CloudinaryStorageStrategy implements IStorageStrategy {
@@ -46,7 +47,21 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
     );
   }
 
-  async uploadFile(file: Express.Multer.File, folder: string = 'indian-public-school'): Promise<UploadResult> {
+  async uploadFile(file: Express.Multer.File, folder?: string): Promise<UploadResult> {
+    const rootFolder = getCloudinaryRootFolder(this.configService);
+    let resolvedFolder = folder ? folder.trim().replace(/^\/+|\/+$/g, '') : '';
+    const rootEndsWithAssets = rootFolder.toLowerCase().endsWith('/assets');
+
+    if (!resolvedFolder) {
+      resolvedFolder = rootEndsWithAssets ? rootFolder : `${rootFolder}/assets`;
+    } else if (!resolvedFolder.toLowerCase().startsWith(rootFolder.toLowerCase())) {
+      if (rootEndsWithAssets && resolvedFolder.toLowerCase().startsWith('assets/')) {
+        const subFolder = resolvedFolder.slice(7).replace(/^\/+/, '');
+        resolvedFolder = subFolder ? `${rootFolder}/${subFolder}` : rootFolder;
+      } else {
+        resolvedFolder = `${rootFolder}/${resolvedFolder}`;
+      }
+    }
     if (!file || !file.buffer || file.buffer.length === 0) {
       throw new BadRequestException('Empty file or missing file buffer provided');
     }
@@ -61,12 +76,13 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       return new Promise((resolve, reject) => {
         const cleanName = file.originalname.replace(/\.pdf$/i, '').replace(/[^a-zA-Z0-9._-]/g, '_');
         const options: Record<string, any> = {
-          folder,
+          folder: resolvedFolder,
           resource_type: resourceType,
         };
 
         if (resourceType === 'raw' || isPdf) {
-          options.public_id = `${Date.now()}_${cleanName}`;
+          const rawExt = isPdf && !cleanName.toLowerCase().endsWith('.pdf') ? '.pdf' : '';
+          options.public_id = `${Date.now()}_${cleanName}${rawExt}`;
         } else {
           options.use_filename = true;
           options.unique_filename = true;
@@ -101,11 +117,14 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
               }
             }
 
+            const relativePath = toRelativeMediaPath(finalUrl, this.configService) as string;
+
             this.invalidateCache();
             resolve({
-              url: finalUrl,
+              url: relativePath,
               key: result.public_id,
               provider: 'cloudinary',
+              mimeType: file.mimetype,
             });
           },
         );
@@ -209,7 +228,21 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
   }
 
   async listResources(folder?: string): Promise<Array<{ id: string; url: string; title: string; category: string; resourceType: string; format: string }>> {
-    const cacheKey = folder || '__ALL__';
+    const rootFolder = getCloudinaryRootFolder(this.configService);
+    let targetFolder = folder ? folder.trim().replace(/^\/+|\/+$/g, '') : '';
+    const rootEndsWithAssets = rootFolder.toLowerCase().endsWith('/assets');
+
+    if (!targetFolder) {
+      targetFolder = rootFolder;
+    } else if (!targetFolder.toLowerCase().startsWith(rootFolder.toLowerCase())) {
+      if (rootEndsWithAssets && targetFolder.toLowerCase().startsWith('assets/')) {
+        const subFolder = targetFolder.slice(7).replace(/^\/+/, '');
+        targetFolder = subFolder ? `${rootFolder}/${subFolder}` : rootFolder;
+      } else {
+        targetFolder = `${rootFolder}/${targetFolder}`;
+      }
+    }
+    const cacheKey = targetFolder || '__ALL__';
     const cached = this.cache.get(cacheKey);
     const now = Date.now();
 
@@ -229,10 +262,8 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
           const options: Record<string, any> = {
             max_results: 100,
             type: 'upload',
+            prefix: targetFolder,
           };
-          if (folder) {
-            options.prefix = folder;
-          }
           return await cloudinary.api.resources(options);
         } catch (err: any) {
           const isRateLimit = this.isRateLimitError(err);

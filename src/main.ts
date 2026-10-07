@@ -18,9 +18,14 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'http://localhost:3000',
+      'https://dev-ips.netlify.app',
+      'https://indian-public-school-app-git-dev-omr31997-6360s-projects.vercel.app',
       'https://indianpublicschool.devs.surf',
       'https://indian-public-school-app.vercel.app',
-      'https://omr31997.github.io/indian-public-school-app'
+      'https://omr31997.github.io/indian-public-school-app',
+      'https://indian-public-school-app-1.vercel.app',
+      'http://ips-web.ezsoftapp.in',
+      'http://api-ips.ezsoftapp.in'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
