@@ -6,6 +6,22 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { UploadsService } from '../uploads/uploads.service';
 import { formatPrettyEventName } from '../common/config';
 
+function cleanAssetPath(url: string): string {
+  if (!url || typeof url !== 'string') return url;
+  let trimmed = url.trim();
+  if (trimmed.includes('cloudinary.com')) {
+    const match = trimmed.match(/\/(?:ips-education\/assets|assets)\/(.+)$/i);
+    if (match && match[1]) {
+      return '/' + match[1].replace(/^\/+/, '');
+    }
+  }
+  let clean = trimmed.replace(/^https?:\/\/[^\/]+/i, '').replace(/^\/+/, '');
+  if (clean.toLowerCase().startsWith('assets/')) {
+    clean = clean.slice('assets/'.length);
+  }
+  return '/' + clean;
+}
+
 @Injectable()
 export class GalleryService {
   private readonly logger = new Logger(GalleryService.name);
@@ -19,6 +35,12 @@ export class GalleryService {
   async create(createGalleryDto: CreateGalleryDto) {
     if (createGalleryDto.eventName) {
       createGalleryDto.eventName = formatPrettyEventName(createGalleryDto.eventName);
+    }
+    if (Array.isArray(createGalleryDto.fileUrl)) {
+      createGalleryDto.fileUrl = createGalleryDto.fileUrl.map(u => cleanAssetPath(u));
+    }
+    if ((createGalleryDto as any).url) {
+      (createGalleryDto as any).url = cleanAssetPath((createGalleryDto as any).url);
     }
     if (createGalleryDto.fileUrl && createGalleryDto.fileUrl.length > 0) {
       const existing = await this.galleryRepository.findAll(
@@ -285,6 +307,12 @@ export class GalleryService {
   async update(id: string, updateGalleryDto: UpdateGalleryDto) {
     if (updateGalleryDto.eventName) {
       updateGalleryDto.eventName = formatPrettyEventName(updateGalleryDto.eventName);
+    }
+    if (Array.isArray(updateGalleryDto.fileUrl)) {
+      updateGalleryDto.fileUrl = updateGalleryDto.fileUrl.map(u => cleanAssetPath(u));
+    }
+    if ((updateGalleryDto as any).url) {
+      (updateGalleryDto as any).url = cleanAssetPath((updateGalleryDto as any).url);
     }
     if (id.startsWith('cdn-')) {
       // Upsert into MongoDB so updates/metadata changes persist

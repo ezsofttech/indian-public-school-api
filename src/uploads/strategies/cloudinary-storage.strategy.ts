@@ -81,7 +81,8 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
         };
 
         if (resourceType === 'raw' || isPdf) {
-          options.public_id = `${Date.now()}_${cleanName}`;
+          const rawExt = isPdf && !cleanName.toLowerCase().endsWith('.pdf') ? '.pdf' : '';
+          options.public_id = `${Date.now()}_${cleanName}${rawExt}`;
         } else {
           options.use_filename = true;
           options.unique_filename = true;

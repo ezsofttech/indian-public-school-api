@@ -7,7 +7,7 @@ export function getCloudinaryCloudBaseUrl(configService?: ConfigService): string
   const cloudName =
     configService?.get<string>('CLOUDINARY_CLOUD_NAME') ||
     process.env.CLOUDINARY_CLOUD_NAME ||
-    'niefrrkx';
+    'dnw7mgysa';
 
   return `https://res.cloudinary.com/${cloudName.trim()}`;
 }
@@ -94,7 +94,9 @@ export function toRelativeMediaPath(pathOrUrl: unknown, configService?: ConfigSe
 
   // Generic fallback replacement for root folder / assets
   clean = clean
+    .replace(/^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i, '/')
     .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
+    .replace(/^\/assets\/assets\//i, '/')
     .replace(/^\/assets\//i, '/');
 
   return clean.startsWith('/') ? clean : `/${clean}`;
@@ -135,7 +137,12 @@ export function toFullMediaUrl(
   let prefix = '/image/upload';
   const lowerMime = (mimeType || '').toLowerCase();
   if (lowerMime.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(path)) prefix = '/video/upload';
-  else if (lowerMime.startsWith('raw/') || /\.(doc|docx|xls|xlsx|zip|csv)$/i.test(path)) prefix = '/raw/upload';
+  else if (
+    lowerMime.startsWith('raw/') ||
+    lowerMime.includes('pdf') ||
+    lowerMime.includes('application/') ||
+    /\.(pdf|doc|docx|xls|xlsx|zip|csv)$/i.test(path)
+  ) prefix = '/raw/upload';
 
   const escapedRoot = rootPath ? rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
   let cleanPath = path.replace(/^\/(?:image|video|raw)\/upload\/(?:v\d+\/)?/i, '/');
@@ -160,10 +167,11 @@ export function toFullMediaUrl(
 export const buildCloudinaryMediaUrl = toFullMediaUrl;
 
 const MEDIA_FILE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|svg|pdf|mp4|webm|mov|doc|docx|xls|xlsx|csv|zip)$/i;
+const PAGE_ROUTE_PATTERNS = /^\/(about|academics|admissions|contact|news|gallery|press-release|facilities|careers|rules|privacy|terms|home|campus|fees|schedule|student|staff|parent|notice|#)/i;
 const MEDIA_PROPERTY_KEYS = new Set([
-  'fileUrl', 'url', 'avatar', 'avatarUrl', 'profileImageUrl', 'marksheetUrl',
+  'fileUrl', 'avatar', 'avatarUrl', 'profileImageUrl', 'marksheetUrl',
   'imageUrl', 'photo', 'logo', 'banner', 'attachment', 'attachmentUrl',
-  'resume', 'file', 'heroImage', 'thumbnail', 'coverImage', 'mediaUrl', 'icon', 'src', 'path',
+  'resume', 'file', 'heroImage', 'thumbnail', 'coverImage', 'mediaUrl', 'icon', 'src',
 ]);
 
 /**
@@ -180,6 +188,10 @@ export function transformMediaUrlsToRelative<T>(
 
   if (typeof obj === 'string') {
     const trimmed = obj.trim();
+    if (PAGE_ROUTE_PATTERNS.test(trimmed) && !MEDIA_FILE_EXTENSIONS.test(trimmed)) {
+      return trimmed as unknown as T;
+    }
+
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || (parentKey && MEDIA_PROPERTY_KEYS.has(parentKey)) || MEDIA_FILE_EXTENSIONS.test(trimmed)) {
       return toRelativeMediaPath(trimmed, configService) as unknown as T;
     }
@@ -224,6 +236,12 @@ export function transformMediaPathsToFull<T>(
     if (parentKey === 'eventName') return formatPrettyEventName(obj) as unknown as T;
 
     const trimmed = obj.trim();
+
+    // Do NOT transform page navigation routes into Cloudinary image URLs
+    if (PAGE_ROUTE_PATTERNS.test(trimmed) && !MEDIA_FILE_EXTENSIONS.test(trimmed)) {
+      return trimmed as unknown as T;
+    }
+
     if (trimmed.startsWith('/')) {
       const rootFolder = getCloudinaryRootFolder(configService);
       const isMediaPrefix =
@@ -234,6 +252,8 @@ export function transformMediaPathsToFull<T>(
         trimmed.startsWith('/Documents') ||
         trimmed.startsWith('/Settings') ||
         trimmed.startsWith('/Videos') ||
+        trimmed.startsWith('/PressRelease') ||
+        trimmed.startsWith('/Review') ||
         trimmed.startsWith('/image/upload') ||
         trimmed.startsWith('/video/upload') ||
         trimmed.startsWith('/raw/upload') ||

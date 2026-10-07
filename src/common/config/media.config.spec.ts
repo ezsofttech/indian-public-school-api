@@ -35,9 +35,9 @@ describe('MediaConfig', () => {
 
   describe('buildCloudinaryMediaUrl', () => {
     it('should build full Cloudinary URL with cloud domain, upload prefix, root folder, and mongo relative path', () => {
-      const relative = '/Settings/Logos/IPSStandardLogo.png';
+      const relative = '/Settings/Logos/BannerLogo.png';
       expect(buildCloudinaryMediaUrl(relative)).toBe(
-        'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Settings/Logos/IPSStandardLogo.png',
+        'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Settings/Logos/BannerLogo.png',
       );
     });
 
@@ -51,9 +51,9 @@ describe('MediaConfig', () => {
 
   describe('toFullMediaUrl', () => {
     it('should construct clean full Cloudinary URL', () => {
-      const relative = '/Settings/Logos/IPSStandardLogo.png';
+      const relative = '/Settings/Logos/BannerLogo.png';
       expect(toFullMediaUrl(relative)).toBe(
-        'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Settings/Logos/IPSStandardLogo.png',
+        'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Settings/Logos/BannerLogo.png',
       );
     });
 
@@ -101,7 +101,7 @@ describe('MediaConfig', () => {
         avatarUrl: 'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/avatar.png',
         mimeType: 'image/png',
         nested: {
-          fileUrl: ['https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/doc.pdf'],
+          fileUrl: ['https://res.cloudinary.com/niefrrkx/raw/upload/ips-education/assets/doc.pdf'],
         },
       });
     });
