@@ -116,6 +116,14 @@ export class UploadsService {
       targetFolder = `${assetsPrefix}/Album`;
     }
 
+    // Final check: Guarantee no duplicate ips-education/assets/assets/ or assets/assets/ in targetFolder
+    targetFolder = targetFolder
+      .replace(/\/ips-education\/assets\/ips-education\/assets\//gi, '/ips-education/assets/')
+      .replace(/\/ips-education\/assets\/assets\//gi, '/ips-education/assets/')
+      .replace(/^ips-education\/assets\/assets\//gi, 'ips-education/assets/')
+      .replace(/\/assets\/assets\//gi, '/assets/')
+      .replace(/^assets\/assets\//gi, 'assets/');
+
     let result: import('./strategies/storage-strategy.interface').UploadResult;
 
     try {

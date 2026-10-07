@@ -115,13 +115,6 @@ export function toFullMediaUrl(
 
   let path = pathOrUrl.trim();
   if (path.startsWith('http://') || path.startsWith('https://')) {
-    if (!path.includes('res.cloudinary.com')) return path;
-    const cfg = typeof mimeTypeOrConfig === 'object' ? mimeTypeOrConfig : configService;
-    const rootFolder = getCloudinaryRootFolder(cfg);
-    if (rootFolder) {
-      const escapedRoot = rootFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      path = path.replace(new RegExp(`\\/${escapedRoot}\\/upload\\/`, 'gi'), '/image/upload/');
-    }
     return path;
   }
 
