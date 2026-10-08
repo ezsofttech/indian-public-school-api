@@ -43,21 +43,29 @@ export class GalleryService {
       (createGalleryDto as any).url = cleanAssetPath((createGalleryDto as any).url);
     }
     if (createGalleryDto.fileUrl && createGalleryDto.fileUrl.length > 0) {
+      const searchUrls = new Set<string>();
+      for (const u of createGalleryDto.fileUrl) {
+        if (!u) continue;
+        searchUrls.add(u);
+        const cleaned = cleanAssetPath(u);
+        searchUrls.add(cleaned);
+        try {
+          searchUrls.add(decodeURIComponent(cleaned));
+          searchUrls.add(decodeURIComponent(u));
+          searchUrls.add(encodeURI(cleaned));
+        } catch {}
+      }
+
       const existing = await this.galleryRepository.findAll(
         { page: 1, limit: 10 },
         [],
-        { fileUrl: { $in: createGalleryDto.fileUrl } },
+        { fileUrl: { $in: Array.from(searchUrls) } },
       );
       const items = existing.items || (existing as any).data || [];
       if (items.length > 0) {
-        const autoUploadDoc = items.find((doc: any) => {
-          const name = String(doc.eventName || '');
-          return name.match(/\.(jpg|jpeg|png|gif|webp|svg|pdf)$/i) || doc.eventType === 'General' || doc.eventType === 'Gallery';
-        });
-        if (autoUploadDoc) {
-          const docId = (autoUploadDoc as any)._id || (autoUploadDoc as any).id;
-          return this.galleryRepository.update(String(docId), createGalleryDto);
-        }
+        const docId = (items[0] as any)._id || (items[0] as any).id;
+        this.logger.log(`Existing gallery document found for fileUrl (${String(docId)}). Updating instead of creating duplicate.`);
+        return this.galleryRepository.update(String(docId), createGalleryDto);
       }
     }
     return this.galleryRepository.create(createGalleryDto);
