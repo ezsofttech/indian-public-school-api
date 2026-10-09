@@ -19,6 +19,7 @@
     "db:restore": "node scripts/db-restore.js",
     "db:seed": "node scripts/db-restore.js",
     "migrate:assets": "node scripts/migrate-assets-to-cloudinary.js",
+    "cloudinary:format": "node scripts/format-cloudinary-root.js",
     "cloudinary:clean": "node scripts/clean-cloudinary-assets.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
