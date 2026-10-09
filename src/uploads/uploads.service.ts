@@ -83,6 +83,8 @@ export class UploadsService {
     } else if (lowerFolder.startsWith('assets/')) {
       const sub = cleanRawFolder.replace(/^assets\//i, '');
       targetFolder = `${assetsPrefix}/${sub}`;
+    } else if (lowerFolder.includes('icons') || lowerAlbum.includes('icons')) {
+      targetFolder = `${assetsPrefix}/Settings/Icons`;
     } else if (lowerFolder.includes('logos') || lowerAlbum.includes('logos')) {
       targetFolder = `${assetsPrefix}/Settings/Logos`;
     } else if (lowerFolder.includes('settings') || lowerAlbum.includes('settings') || lowerFolder.includes('school-settings') || lowerAlbum.includes('school-settings')) {
@@ -143,7 +145,13 @@ export class UploadsService {
 
     const isSettingsUpload = targetFolder.includes('/Settings/');
     const eventType = isSettingsUpload
-      ? 'Settings'
+      ? (targetFolder.endsWith('/Icons') || lowerFolder.includes('icons') || lowerAlbum.includes('icons')
+          ? 'Icons'
+          : targetFolder.endsWith('/Logos') || lowerFolder.includes('logos') || lowerAlbum.includes('logos')
+          ? 'Logos'
+          : targetFolder.endsWith('/Home') || lowerFolder.includes('home') || lowerAlbum.includes('home')
+          ? 'Home'
+          : 'Settings')
       : isDoc
       ? (album && album !== 'General' ? album : 'Documents')
       : (album || 'General');
