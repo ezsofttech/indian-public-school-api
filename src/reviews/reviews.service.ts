@@ -6,10 +6,14 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @Injectable()
 export class ReviewsService {
-  constructor(private readonly reviewRepository: ReviewRepository) {}
+  constructor(private readonly reviewRepository: ReviewRepository) { }
 
   async create(createReviewDto: CreateReviewDto) {
-    return this.reviewRepository.create(createReviewDto);
+    const payload = {
+      ...createReviewDto,
+      isApproved: createReviewDto.isApproved !== undefined ? createReviewDto.isApproved : true,
+    };
+    return this.reviewRepository.create(payload);
   }
 
   async findAll(
@@ -26,7 +30,8 @@ export class ReviewsService {
       additionalFilter.batch = batch;
     }
     if (isApproved !== undefined && isApproved !== null) {
-      additionalFilter.isApproved = String(isApproved) === 'true';
+      const isApp = String(isApproved) === 'true';
+      additionalFilter.isApproved = isApp ? { $ne: false } : false;
     }
 
     return this.reviewRepository.findAll(
@@ -51,41 +56,41 @@ export class ReviewsService {
   async seedDefaultReviews() {
     const count = await this.reviewRepository.count();
     if (count > 0) {
-      return { message: 'Reviews collection already seeded', seeded: false };
+      // Mark initial unapproved records as approved if needed
+      return { message: 'Reviews collection already populated', seeded: false };
     }
 
     const defaultReviews: CreateReviewDto[] = [
       {
-        name: 'Pradip',
-        batch: '2020-2022',
-        rating: 3,
-        feedback:
-          'Great school. All the teachers we had cares about both academic and personal growth. We have 3 kids so we didn’t just get lucky. It’s a small enough school so kids don’t get lost but big enough to have all the extra curricular activities to keep kids busy and be social. Love, love, love this school.',
-        avatar: '/Review/Anonymous.png',
-        isApproved: true,
-      },
-      {
-        name: 'Abhishek Prakash Jha',
-        batch: '2020-2022',
+        name: "Shriyansh Shekhar Lenka",
+        batch: "2021-2022",
         rating: 5,
-        feedback: 'good School, good environment.',
-        avatar: '/Review/AbhishekPrakashJha.jpg',
+        feedback: "Satisfied with studies and overall performance of the child.",
+        avatar: "https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Review/ShreyanshSekharJha.jpg",
         isApproved: true,
       },
       {
-        name: 'Shriyansh Shekhar Lenka',
-        batch: '2021-2022',
+        name: "Abhishek Prakash Jha",
+        batch: "2020-2022",
         rating: 5,
-        feedback: 'Satisfied with studies and overall performance of the child.',
-        avatar: '/Review/ShreyanshSekharJha.jpg',
+        feedback: "Good School, good environment for learning.",
+        avatar: "https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Review/AbhishekPrakashJha.jpg",
         isApproved: true,
       },
       {
-        name: 'Samay Palta Singh',
-        batch: '2021-2022',
-        rating: 3,
-        feedback: 'Good studies and good overall performance .Good improvement shown .',
-        avatar: '/Review/SmayPatlaSingh.jpg',
+        name: "Ansh Singh",
+        batch: "2021-2023",
+        rating: 5,
+        feedback: "Studies are good ..... satisfied with the academics and management of the school.",
+        avatar: "https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Review/AnshSingh.jpg",
+        isApproved: true,
+      },
+      {
+        name: "Samay Palta Singh",
+        batch: "2021-2022",
+        rating: 4,
+        feedback: "Good studies and good overall performance. Good improvement shown.",
+        avatar: "https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Review/SmayPatlaSingh.jpg",
         isApproved: true,
       },
     ];
