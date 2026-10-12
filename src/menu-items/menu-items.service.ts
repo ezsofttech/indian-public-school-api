@@ -20,6 +20,8 @@ export class MenuItemsService {
           page?: number;
           limit?: number;
           flat?: boolean | string;
+          sortBy?: string;
+          sortOrder?: string;
         }
       | string,
     publishedOnly = false,

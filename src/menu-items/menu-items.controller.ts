@@ -35,6 +35,8 @@ export class MenuItemsController {
   @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page' })
   @ApiQuery({ name: 'flat', required: false, type: String, description: 'Return flat list if true' })
+  @ApiQuery({ name: 'sortBy', required: false, type: String, description: 'Field to sort by' })
+  @ApiQuery({ name: 'sortOrder', required: false, type: String, description: 'Sort direction (asc/desc)' })
   async findAll(
     @Query('category') category?: string,
     @Query('publishedOnly') publishedOnly?: string,
@@ -44,6 +46,8 @@ export class MenuItemsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('flat') flat?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
   ) {
     return this.menuItemsService.findAll({
       category,
@@ -52,6 +56,8 @@ export class MenuItemsController {
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       flat,
+      sortBy,
+      sortOrder,
     });
   }
 
