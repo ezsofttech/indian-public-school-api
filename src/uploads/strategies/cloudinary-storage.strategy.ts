@@ -80,9 +80,13 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
           resource_type: resourceType,
         };
 
-        if (resourceType === 'raw' || isPdf) {
+        if (resourceType === 'raw') {
           const rawExt = isPdf && !cleanName.toLowerCase().endsWith('.pdf') ? '.pdf' : '';
           options.public_id = `${Date.now()}_${cleanName}${rawExt}`;
+        } else if (isPdf) {
+          // When resource_type is 'image', Cloudinary format extension is automatically appended on delivery.
+          // Do not append .pdf to public_id to avoid double-extension .pdf.pdf
+          options.public_id = `${Date.now()}_${cleanName}`;
         } else {
           options.use_filename = true;
           options.unique_filename = true;
@@ -115,6 +119,11 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
               if (!basePath.toLowerCase().endsWith('.pdf')) {
                 finalUrl = `${basePath}.pdf${suffix}`;
               }
+            }
+
+            // Normalize any duplicate .pdf.pdf extension to single .pdf
+            if (finalUrl) {
+              finalUrl = finalUrl.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
             }
 
             const relativePath = toRelativeMediaPath(finalUrl, this.configService) as string;
@@ -214,6 +223,13 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       let result = await cloudinary.uploader.destroy(key, { resource_type: 'image' });
       if (result && result.result === 'ok') return true;
 
+      // Also try key without .pdf if key had .pdf
+      if (key.toLowerCase().endsWith('.pdf')) {
+        const keyWithoutPdf = key.slice(0, -4);
+        result = await cloudinary.uploader.destroy(keyWithoutPdf, { resource_type: 'image' });
+        if (result && result.result === 'ok') return true;
+      }
+
       // 2. Try video resource_type
       result = await cloudinary.uploader.destroy(key, { resource_type: 'video' });
       if (result && result.result === 'ok') return true;
@@ -256,14 +272,9 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       return cached ? cached.data : [];
     }
 
-    const fetchWithRetry = async (retries = 2, delayMs = 500): Promise<any> => {
+    const fetchWithRetry = async (options: Record<string, any>, retries = 2, delayMs = 500): Promise<any> => {
       for (let i = 0; i <= retries; i++) {
         try {
-          const options: Record<string, any> = {
-            max_results: 100,
-            type: 'upload',
-            prefix: targetFolder,
-          };
           return await cloudinary.api.resources(options);
         } catch (err: any) {
           const isRateLimit = this.isRateLimitError(err);
@@ -284,19 +295,53 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
     };
 
     try {
-      const res = await fetchWithRetry();
-      const resources = res?.resources || [];
-      const formatted = resources.map((r: any) => {
+      const allResources: any[] = [];
+      const resourceTypes = ['image', 'video', 'raw'];
+
+      for (const resType of resourceTypes) {
+        let nextCursor: string | undefined = undefined;
+        do {
+          const options: Record<string, any> = {
+            max_results: 500,
+            type: 'upload',
+            resource_type: resType,
+            prefix: targetFolder,
+          };
+          if (nextCursor) {
+            options.next_cursor = nextCursor;
+          }
+
+          const res = await fetchWithRetry(options);
+          if (res?.resources && Array.isArray(res.resources)) {
+            allResources.push(...res.resources);
+          }
+          nextCursor = res?.next_cursor;
+        } while (nextCursor);
+      }
+
+      const formatted = allResources.map((r: any) => {
         let assetUrl = r.secure_url || r.url || '';
         const isPdf = r.format === 'pdf' || (r.public_id || '').toLowerCase().endsWith('.pdf');
         if (isPdf && assetUrl && !assetUrl.toLowerCase().endsWith('.pdf')) {
           assetUrl = `${assetUrl}.pdf`;
         }
+        if (assetUrl) {
+          assetUrl = assetUrl.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
+        }
+        const pubId = r.public_id || '';
+        const parts = pubId.split('/');
+        const cleanParts = parts.slice(0, -1).filter((p: string) => {
+          const lower = p.toLowerCase();
+          return lower !== 'ips-education' && lower !== 'assets';
+        });
+
+        const category = cleanParts.length > 0 ? cleanParts.join('/') : 'General';
+
         return {
-          id: r.public_id || r.asset_id,
+          id: pubId || r.asset_id,
           url: assetUrl,
-          title: (r.public_id || '').split('/').pop() || 'Cloudinary Asset',
-          category: (r.folder || r.public_id || '').includes('/') ? (r.public_id || '').split('/').slice(0, -1).pop() || 'Assets' : 'General',
+          title: parts.pop() || 'Cloudinary Asset',
+          category,
           resourceType: r.resource_type || 'image',
           format: r.format || '',
         };

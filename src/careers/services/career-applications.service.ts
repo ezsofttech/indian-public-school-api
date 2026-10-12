@@ -101,6 +101,9 @@ export class CareerApplicationsService {
       if (app && app.resumeUrl) {
         await this.uploadsService.deleteFileByUrl(app.resumeUrl);
       }
+      if (app && app.photoUrl) {
+        await this.uploadsService.deleteFileByUrl(app.photoUrl);
+      }
     } catch (err) {
       this.logger.warn(`Could not cleanup resume for application ${id}: ${err}`);
     }

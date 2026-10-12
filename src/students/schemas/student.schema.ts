@@ -56,6 +56,9 @@ export class Student {
   @Prop()
   avatar?: string;
 
+  @Prop({ type: [String], default: [] })
+  document?: string[];
+
   @Prop({ default: Date.now })
   enrolledAt!: Date;
 }

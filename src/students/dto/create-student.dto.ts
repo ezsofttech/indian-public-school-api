@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsDateString,
   IsEmail,
   IsEnum,
@@ -7,6 +8,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateStudentDto {
   @ApiProperty({
@@ -105,6 +107,22 @@ export class CreateStudentDto {
   @IsOptional()
   @IsString()
   avatar?: string;
+
+  @ApiPropertyOptional({
+    example: ['https://res.cloudinary.com/demo/image/upload/v1/student_document.pdf'],
+    description: 'Student document or marksheet URLs',
+    type: [String],
+  })
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return [];
+    if (typeof value === 'string') return value.trim() ? [value.trim()] : [];
+    if (Array.isArray(value)) return value.filter((item) => typeof item === 'string' && item.trim()).map((s) => s.trim());
+    return [];
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  document?: string[];
 
   @ApiPropertyOptional({
     example: '2026-04-01',

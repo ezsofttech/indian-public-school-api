@@ -32,6 +32,11 @@ export class ApplyCareerDto {
   @IsOptional()
   resumeUrl?: string;
 
+  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/demo/image/upload/v1234/photo.jpg', description: 'Applicant photo or image URL' })
+  @IsString()
+  @IsOptional()
+  photoUrl?: string;
+
   @ApiPropertyOptional({ example: { notice_period: '1 Month', experience_years: '4' }, description: 'Answers to dynamic application form fields' })
   @IsObject()
   @IsOptional()

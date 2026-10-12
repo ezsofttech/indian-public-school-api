@@ -99,6 +99,9 @@ export function toRelativeMediaPath(pathOrUrl: unknown, configService?: ConfigSe
     .replace(/^\/assets\/assets\//i, '/')
     .replace(/^\/assets\//i, '/');
 
+  // Strip duplicate .pdf.pdf
+  clean = clean.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
+
   return clean.startsWith('/') ? clean : `/${clean}`;
 }
 
@@ -129,13 +132,20 @@ export function toFullMediaUrl(
 
   let prefix = '/image/upload';
   const lowerMime = (mimeType || '').toLowerCase();
-  if (lowerMime.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(path)) prefix = '/video/upload';
-  else if (
+  if (lowerMime.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(path)) {
+    prefix = '/video/upload';
+  } else if (
     lowerMime.startsWith('raw/') ||
+    /\.(doc|docx|xls|xlsx|zip|csv|txt)$/i.test(path)
+  ) {
+    prefix = '/raw/upload';
+  } else if (
     lowerMime.includes('pdf') ||
-    lowerMime.includes('application/') ||
-    /\.(pdf|doc|docx|xls|xlsx|zip|csv)$/i.test(path)
-  ) prefix = '/raw/upload';
+    /\.pdf$/i.test(path)
+  ) {
+    // Cloudinary stores PDFs under image/upload to allow previews, multi-page rasterization, and transformations
+    prefix = '/image/upload';
+  }
 
   const escapedRoot = rootPath ? rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
   let cleanPath = path.replace(/^\/(?:image|video|raw)\/upload\/(?:v\d+\/)?/i, '/');
@@ -146,6 +156,9 @@ export function toFullMediaUrl(
   cleanPath = cleanPath
     .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
     .replace(/^\/assets\//i, '/');
+
+  // Normalize duplicate .pdf.pdf extension
+  cleanPath = cleanPath.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
 
   const normalized = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
 

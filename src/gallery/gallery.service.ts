@@ -107,36 +107,15 @@ export class GalleryService {
     );
     const dbItems = dbResult.items || (dbResult as any).data || [];
 
-    // 2. Map DB file URLs and assign fallbacks for records without images
+    // 2. Map DB file URLs
     const dbUrls = new Set<string>();
-    const DEFAULT_FALLBACK_IMAGES = [
-      "/Settings/Home/hero-campus.jpg",
-      "https://images.unsplash.com/photo-1562774053-701939374585?w=1200&auto=format&fit=crop&q=80",
-      "https://images.unsplash.com/photo-1580582932707-520aed937b7b?w=1200&auto=format&fit=crop&q=80",
-      "https://images.unsplash.com/photo-1577896851231-70ef18881754?w=1200&auto=format&fit=crop&q=80",
-      "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=1200&auto=format&fit=crop&q=80",
-      "/Settings/Home/Banner_1.jpg",
-      "/Settings/Home/Banner_2.jpg",
-      "/Settings/Home/Banner_3.jpg",
-      "/Settings/Home/Banner_4.jpg",
-      "/Settings/Home/Banner_5.jpg",
-      "/Settings/Home/Banner_6.jpg",
-      "/Settings/Home/Banner_7.jpg",
-      "/Settings/Home/Banner_8.jpg",
-    ];
 
-    dbItems.forEach((item: any, idx: number) => {
-      let urls = Array.isArray(item.fileUrl)
+    dbItems.forEach((item: any) => {
+      const urls = Array.isArray(item.fileUrl)
         ? item.fileUrl
         : typeof item.fileUrl === 'string' && item.fileUrl.trim()
         ? [item.fileUrl]
         : [];
-
-      if (urls.length === 0) {
-        const fallbackUrl = DEFAULT_FALLBACK_IMAGES[idx % DEFAULT_FALLBACK_IMAGES.length];
-        item.fileUrl = [fallbackUrl];
-        urls = [fallbackUrl];
-      }
 
       urls.forEach((u: string) => {
         if (u) {
@@ -183,42 +162,6 @@ export class GalleryService {
           directory: dirPath,
           fileUrl: [res.url],
           mimeType: res.mimeType || (res.format === 'pdf' ? 'application/pdf' : res.resourceType === 'video' ? `video/${res.format || 'mp4'}` : `image/${res.format || 'jpeg'}`),
-          isCdnResource: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      }
-    });
-
-    // 4b. Ensure complete media suite with default sample assets
-    const DEFAULT_MEDIA_ITEMS = [
-      { eventName: "Main Campus Aerial View", eventType: "Campus", directory: "/album/campus", fileUrl: ["/Settings/Home/hero-campus.jpg"] },
-      { eventName: "School Academic Infrastructure", eventType: "Campus", directory: "/album/campus", fileUrl: ["https://images.unsplash.com/photo-1562774053-701939374585?w=1200&auto=format&fit=crop&q=80"] },
-      { eventName: "Smart Science & Innovation Lab", eventType: "Activities", directory: "/album/activities", fileUrl: ["https://images.unsplash.com/photo-1580582932707-520aed937b7b?w=1200&auto=format&fit=crop&q=80"] },
-      { eventName: "Digital Smart Interactive Classroom", eventType: "Campus", directory: "/album/campus", fileUrl: ["https://images.unsplash.com/photo-1577896851231-70ef18881754?w=1200&auto=format&fit=crop&q=80"] },
-      { eventName: "Central Library & Knowledge Hub", eventType: "Campus", directory: "/album/campus", fileUrl: ["https://images.unsplash.com/photo-1509062522246-3755977927d7?w=1200&auto=format&fit=crop&q=80"] },
-      { eventName: "School Entrance & Reception", eventType: "Banners", directory: "/album/banners", fileUrl: ["/Settings/Home/Banner_1.jpg"] },
-      { eventName: "Annual Athletic Sports Field", eventType: "Sports", directory: "/album/sports", fileUrl: ["/Settings/Home/Banner_2.jpg"] },
-      { eventName: "Cultural Festival Stage", eventType: "Events", directory: "/album/events", fileUrl: ["/Settings/Home/Banner_3.jpg"] },
-      { eventName: "Co-Curricular Student Center", eventType: "Activities", directory: "/album/activities", fileUrl: ["/Settings/Home/Banner_4.jpg"] },
-      { eventName: "Computer Science Center", eventType: "Campus", directory: "/album/campus", fileUrl: ["/Settings/Home/Banner_7.jpg"] },
-      { eventName: "Art & Craft Studio", eventType: "Arts", directory: "/album/arts", fileUrl: ["/Settings/Home/Banner_6.jpg"] },
-      { eventName: "Hostel Premises", eventType: "Hostel", directory: "/album/hostel", fileUrl: ["/Settings/Home/Banner_7.jpg"] },
-      { eventName: "Open Green Playgrounds", eventType: "Sports", directory: "/album/sports", fileUrl: ["/Settings/Home/Banner_8.jpg"] },
-    ];
-
-    DEFAULT_MEDIA_ITEMS.forEach((item, idx) => {
-      const u = item.fileUrl[0];
-      if (u && !dbUrls.has(u)) {
-        dbUrls.add(u);
-        virtualItems.push({
-          _id: `default-${idx}`,
-          id: `default-${idx}`,
-          publicId: `default-${idx}`,
-          eventName: item.eventName,
-          eventType: item.eventType,
-          directory: item.directory,
-          fileUrl: item.fileUrl,
           isCdnResource: true,
           createdAt: new Date(),
           updatedAt: new Date(),

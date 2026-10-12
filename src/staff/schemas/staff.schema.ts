@@ -44,6 +44,12 @@ export class Staff {
   @Prop()
   avatar?: string;
 
+  @Prop()
+  resume?: string;
+
+  @Prop({ type: [String], default: [] })
+  document?: string[];
+
   @Prop({ enum: ['Active', 'On Leave', 'Inactive'], default: 'Active' })
   status!: string;
 }

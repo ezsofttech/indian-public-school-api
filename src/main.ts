@@ -26,6 +26,8 @@ async function bootstrap() {
       'https://indian-public-school-app.vercel.app',
       'https://omr31997.github.io/indian-public-school-app',
       'https://indian-public-school-app-1.vercel.app',
+      'https://ips-web.ezsoftapp.in',
+      'https://api-ips.ezsoftapp.in',
       'http://ips-web.ezsoftapp.in',
       'http://api-ips.ezsoftapp.in'
     ],
