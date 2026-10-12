@@ -80,9 +80,13 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
           resource_type: resourceType,
         };
 
-        if (resourceType === 'raw' || isPdf) {
+        if (resourceType === 'raw') {
           const rawExt = isPdf && !cleanName.toLowerCase().endsWith('.pdf') ? '.pdf' : '';
           options.public_id = `${Date.now()}_${cleanName}${rawExt}`;
+        } else if (isPdf) {
+          // When resource_type is 'image', Cloudinary format extension is automatically appended on delivery.
+          // Do not append .pdf to public_id to avoid double-extension .pdf.pdf
+          options.public_id = `${Date.now()}_${cleanName}`;
         } else {
           options.use_filename = true;
           options.unique_filename = true;
@@ -115,6 +119,11 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
               if (!basePath.toLowerCase().endsWith('.pdf')) {
                 finalUrl = `${basePath}.pdf${suffix}`;
               }
+            }
+
+            // Normalize any duplicate .pdf.pdf extension to single .pdf
+            if (finalUrl) {
+              finalUrl = finalUrl.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
             }
 
             const relativePath = toRelativeMediaPath(finalUrl, this.configService) as string;
@@ -214,6 +223,13 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       let result = await cloudinary.uploader.destroy(key, { resource_type: 'image' });
       if (result && result.result === 'ok') return true;
 
+      // Also try key without .pdf if key had .pdf
+      if (key.toLowerCase().endsWith('.pdf')) {
+        const keyWithoutPdf = key.slice(0, -4);
+        result = await cloudinary.uploader.destroy(keyWithoutPdf, { resource_type: 'image' });
+        if (result && result.result === 'ok') return true;
+      }
+
       // 2. Try video resource_type
       result = await cloudinary.uploader.destroy(key, { resource_type: 'video' });
       if (result && result.result === 'ok') return true;
@@ -308,6 +324,9 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
         const isPdf = r.format === 'pdf' || (r.public_id || '').toLowerCase().endsWith('.pdf');
         if (isPdf && assetUrl && !assetUrl.toLowerCase().endsWith('.pdf')) {
           assetUrl = `${assetUrl}.pdf`;
+        }
+        if (assetUrl) {
+          assetUrl = assetUrl.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
         }
         const pubId = r.public_id || '';
         const parts = pubId.split('/');
