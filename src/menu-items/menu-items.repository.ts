@@ -196,10 +196,12 @@ export class MenuItemsRepository {
           page?: number;
           limit?: number;
           flat?: boolean | string;
+          sortBy?: string;
+          sortOrder?: string;
         }
       | string,
     publishedOnlyParam?: boolean | string,
-  ): Promise<any[]> {
+  ): Promise<any> {
     await this.removeDuplicates();
 
     const opts =
@@ -234,9 +236,18 @@ export class MenuItemsRepository {
       ];
     }
 
+    let sortOptions: any = { level: 1, order: 1, createdAt: 1 };
+    if (opts.sortBy) {
+      const sortDirection =
+        String(opts.sortOrder).toLowerCase() === 'desc' || String(opts.sortOrder) === '-1'
+          ? -1
+          : 1;
+      sortOptions = { [opts.sortBy]: sortDirection };
+    }
+
     const items = await this.menuItemModel
       .find(filter)
-      .sort({ level: 1, order: 1, createdAt: 1 })
+      .sort(sortOptions)
       .lean()
       .exec();
 
@@ -265,7 +276,41 @@ export class MenuItemsRepository {
       };
     });
 
-    if (opts.flat === true || String(opts.flat).toLowerCase() === 'true') {
+    const isFlat = opts.flat === true || String(opts.flat).toLowerCase() === 'true';
+
+    // Check if pagination was requested (page or limit provided)
+    const isPaginationRequested =
+      (opts.page !== undefined && opts.page !== null) ||
+      (opts.limit !== undefined && opts.limit !== null);
+
+    const limitVal =
+      opts.limit !== undefined && opts.limit !== null
+        ? Number(opts.limit)
+        : undefined;
+
+    const isUnlimited =
+      limitVal !== undefined && (limitVal <= 0 || Number.isNaN(limitVal));
+
+    if (isPaginationRequested && !isUnlimited) {
+      const total = enrichedItems.length;
+      const pageNum = Math.max(1, Number(opts.page) || 1);
+      const limitNum = Math.max(1, limitVal || 10);
+      const totalPages = Math.ceil(total / limitNum) || 1;
+      const skip = (pageNum - 1) * limitNum;
+      const paginatedItems = enrichedItems.slice(skip, skip + limitNum);
+
+      return {
+        items: paginatedItems,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
+      };
+    }
+
+    if (isFlat) {
       return enrichedItems;
     }
 
