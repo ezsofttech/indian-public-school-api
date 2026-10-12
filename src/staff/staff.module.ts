@@ -5,9 +5,12 @@ import { StaffRepository } from './staff.repository';
 import { StaffService } from './staff.service';
 import { StaffController } from './staff.controller';
 
+import { UploadsModule } from '../uploads/uploads.module';
+
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Staff.name, schema: StaffSchema }]),
+    UploadsModule,
   ],
   controllers: [StaffController],
   providers: [StaffRepository, StaffService],

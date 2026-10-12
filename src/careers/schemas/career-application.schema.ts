@@ -36,6 +36,9 @@ export class CareerApplication {
   @Prop({ default: '' })
   resumeUrl: string;
 
+  @Prop({ default: '' })
+  photoUrl: string;
+
   @Prop({ type: Object, default: {} })
   customAnswers: Record<string, string>;
 

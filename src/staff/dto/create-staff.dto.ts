@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsDateString,
   IsEmail,
   IsEnum,
@@ -7,6 +8,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateStaffDto {
   @ApiProperty({ example: 'Dr. Sarah Connor', description: 'Staff full name' })
@@ -71,6 +73,30 @@ export class CreateStaffDto {
   @IsOptional()
   @IsString()
   avatar?: string;
+
+  @ApiPropertyOptional({
+    example: 'https://res.cloudinary.com/demo/image/upload/v1/staff_resume.pdf',
+    description: 'Staff resume or CV document URL',
+  })
+  @IsOptional()
+  @IsString()
+  resume?: string;
+
+  @ApiPropertyOptional({
+    example: ['https://res.cloudinary.com/demo/image/upload/v1/staff_document.pdf'],
+    description: 'Staff certificates or qualification document URLs',
+    type: [String],
+  })
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return [];
+    if (typeof value === 'string') return value.trim() ? [value.trim()] : [];
+    if (Array.isArray(value)) return value.filter((item) => typeof item === 'string' && item.trim()).map((s) => s.trim());
+    return [];
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  document?: string[];
 
   @ApiPropertyOptional({
     example: 'Active',
