@@ -1,6 +1,8 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Inject, OnModuleInit } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { SchoolSettingRepository } from './school-setting.repository';
 import { CreateSchoolSettingDto } from './dto/create-school-setting.dto';
 import { UpdateSchoolSettingDto } from './dto/update-school-setting.dto';
@@ -8,7 +10,10 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @Injectable()
 export class SchoolSettingsService implements OnModuleInit {
-  constructor(private readonly schoolSettingRepository: SchoolSettingRepository) {}
+  constructor(
+    private readonly schoolSettingRepository: SchoolSettingRepository,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
 
   async onModuleInit() {
     await this.seedSiteDatasource();
@@ -48,6 +53,11 @@ export class SchoolSettingsService implements OnModuleInit {
   }
 
   async create(dto: CreateSchoolSettingDto) {
+    try {
+      await this.cacheManager.del('site_datasource');
+    } catch {
+      // ignore
+    }
     const status = dto.status || 'Active';
     const existing = await this.schoolSettingRepository.findByKey(dto.key);
     if (existing) {
@@ -76,11 +86,43 @@ export class SchoolSettingsService implements OnModuleInit {
   }
 
   async findByKey(key: string) {
-    return this.schoolSettingRepository.findByKey(key);
+    const cacheKey = `setting_key_${key}`;
+    try {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) return cached;
+    } catch {
+      // ignore
+    }
+
+    const res = await this.schoolSettingRepository.findByKey(key);
+    if (res) {
+      try {
+        await this.cacheManager.set(cacheKey, res, 60 * 1000);
+      } catch {
+        // ignore
+      }
+    }
+    return res;
   }
 
   async findActiveSetting() {
-    return this.schoolSettingRepository.findActive();
+    const cacheKey = 'active_school_setting';
+    try {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) return cached;
+    } catch {
+      // ignore
+    }
+
+    const res = await this.schoolSettingRepository.findActive();
+    if (res) {
+      try {
+        await this.cacheManager.set(cacheKey, res, 60 * 1000);
+      } catch {
+        // ignore
+      }
+    }
+    return res;
   }
 
   async update(id: string, dto: UpdateSchoolSettingDto) {
@@ -90,14 +132,36 @@ export class SchoolSettingsService implements OnModuleInit {
       await this.schoolSettingRepository.deactivateOthers(id, cat);
     }
     const result = await this.schoolSettingRepository.update(id, dto);
-    const key = current?.key;
+    const key = current?.key || dto.key;
     if (key && key !== 'site_datasource' && dto.value) {
       await this.syncBrandingToDatasource(key, dto.value);
     }
+
+    try {
+      await this.cacheManager.del('site_datasource');
+      await this.cacheManager.del('active_school_setting');
+      if (key) {
+        await this.cacheManager.del(`setting_key_${key}`);
+      }
+    } catch {
+      // ignore
+    }
+
     return result;
   }
 
   async remove(id: string) {
+    const current = await this.schoolSettingRepository.findById(id);
+    const key = current?.key;
+    try {
+      await this.cacheManager.del('site_datasource');
+      await this.cacheManager.del('active_school_setting');
+      if (key) {
+        await this.cacheManager.del(`setting_key_${key}`);
+      }
+    } catch {
+      // ignore
+    }
     return this.schoolSettingRepository.delete(id);
   }
 }

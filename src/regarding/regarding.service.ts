@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { SchoolSettingsService } from '../school-settings/school-settings.service';
 
-type Datasource = Record<string, unknown>;
+export type Datasource = Record<string, unknown>;
+
+const DATASOURCE_CACHE_KEY = 'site_datasource';
 
 /**
  * Serves the public website content without making the website dependent on a
@@ -12,12 +16,32 @@ type Datasource = Record<string, unknown>;
  */
 @Injectable()
 export class RegardingService {
-  constructor(private readonly schoolSettingsService: SchoolSettingsService) {}
+  constructor(
+    private readonly schoolSettingsService: SchoolSettingsService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
+
+  async clearCache() {
+    try {
+      await this.cacheManager.del(DATASOURCE_CACHE_KEY);
+    } catch {
+      // ignore
+    }
+  }
 
   async getDatasource(): Promise<Datasource> {
+    try {
+      const nestCached = await this.cacheManager.get<Datasource>(DATASOURCE_CACHE_KEY);
+      if (nestCached && Object.keys(nestCached).length > 0) {
+        return nestCached;
+      }
+    } catch {
+      // continue to fetch from database if cache lookup fails
+    }
+
     let datasource: Datasource = {};
     try {
-      const setting = await this.schoolSettingsService.findActiveSetting();
+      const setting: any = await this.schoolSettingsService.findActiveSetting();
       const value = setting?.value;
 
       if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -33,6 +57,14 @@ export class RegardingService {
         datasource = JSON.parse(await readFile(filePath, 'utf8')) as Datasource;
       } catch {
         datasource = {};
+      }
+    }
+
+    if (datasource && Object.keys(datasource).length > 0) {
+      try {
+        await this.cacheManager.set(DATASOURCE_CACHE_KEY, datasource, 60 * 1000);
+      } catch {
+        // ignore
       }
     }
 

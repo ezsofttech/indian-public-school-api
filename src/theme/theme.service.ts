@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { ThemeRepository } from './theme.repository';
 import { CreateThemeDto } from './dto/create-theme.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
@@ -134,7 +136,7 @@ export const DEFAULT_PRESET_THEMES = [
     isActive: false,
     colors: {
       primary: 'oklch(0.62 0.18 230)',
-      primaryForeground: 'oklch(0.12 0.05 240)',
+      primaryForeground: 'oklch(0.985 0.005 250)',
       secondary: 'oklch(0.22 0.04 240)',
       secondaryForeground: 'oklch(0.95 0.02 230)',
       accent: 'oklch(0.26 0.05 240)',
@@ -169,7 +171,10 @@ export const DEFAULT_PRESET_THEMES = [
 
 @Injectable()
 export class ThemeService implements OnModuleInit {
-  constructor(private readonly themeRepository: ThemeRepository) { }
+  constructor(
+    private readonly themeRepository: ThemeRepository,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) { }
 
   async onModuleInit() {
     await this.seedPresetsIfEmpty();
@@ -219,6 +224,14 @@ export class ThemeService implements OnModuleInit {
         updated = true;
       }
 
+      if (t.isPreset && t.slug === 'cyber-dark-sapphire' && t.colors?.primaryForeground?.includes('0.1')) {
+        updateData.colors = {
+          ...t.colors,
+          primaryForeground: 'oklch(0.985 0.005 250)',
+        };
+        updated = true;
+      }
+
       if (updated) {
         await this.themeRepository.update(t._id.toString(), updateData);
       }
@@ -247,7 +260,27 @@ export class ThemeService implements OnModuleInit {
     }
   }
 
+  private async invalidateThemeCache() {
+    try {
+      await this.cacheManager.del('theme_active_web');
+      await this.cacheManager.del('theme_active_admin');
+      await this.cacheManager.del('theme_active_both');
+      await this.cacheManager.del('theme_active_all');
+      await this.cacheManager.del('theme_active_');
+    } catch {
+      // ignore
+    }
+  }
+
   async getActiveTheme(portal?: string): Promise<ThemeDocument> {
+    const cacheKey = `theme_active_${portal || 'all'}`;
+    try {
+      const cached = await this.cacheManager.get<ThemeDocument>(cacheKey);
+      if (cached) return cached;
+    } catch {
+      // ignore
+    }
+
     let active = await this.themeRepository.findActive(portal);
     if (!active) {
       const all = await this.themeRepository.findAllRaw();
@@ -264,6 +297,13 @@ export class ThemeService implements OnModuleInit {
     if (!active) {
       return DEFAULT_PRESET_THEMES[0] as any;
     }
+
+    try {
+      await this.cacheManager.set(cacheKey, active, 60 * 1000);
+    } catch {
+      // ignore
+    }
+
     return active;
   }
 
@@ -297,13 +337,16 @@ export class ThemeService implements OnModuleInit {
       await this.themeRepository.deactivateForPortal(targetPortal);
     }
 
-    return this.themeRepository.create({
+    const created = await this.themeRepository.create({
       ...dto,
       slug,
       portal: targetPortal,
       isPreset: dto.isPreset ?? false,
       isActive: dto.isActive ?? false,
     } as any);
+
+    await this.invalidateThemeCache();
+    return created;
   }
 
   async update(id: string, dto: UpdateThemeDto): Promise<ThemeDocument> {
@@ -334,6 +377,8 @@ export class ThemeService implements OnModuleInit {
     if (!updated) {
       throw new NotFoundException(`Theme with ID "${id}" not found`);
     }
+
+    await this.invalidateThemeCache();
     return updated;
   }
 
@@ -343,6 +388,7 @@ export class ThemeService implements OnModuleInit {
     await this.themeRepository.deactivateForPortal(portal);
     const activated = await this.themeRepository.update(id, { isActive: true } as any);
     await this.sanitizeActiveThemes();
+    await this.invalidateThemeCache();
     return activated;
   }
 
@@ -355,6 +401,7 @@ export class ThemeService implements OnModuleInit {
       throw new BadRequestException('Built-in preset themes cannot be deleted.');
     }
     await this.themeRepository.delete(id);
+    await this.invalidateThemeCache();
     return { success: true, message: 'Theme deleted successfully' };
   }
 
@@ -367,6 +414,7 @@ export class ThemeService implements OnModuleInit {
         await this.themeRepository.create(preset as any);
       }
     }
+    await this.invalidateThemeCache();
     return { success: true, count: DEFAULT_PRESET_THEMES.length };
   }
 }

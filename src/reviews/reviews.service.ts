@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { ReviewRepository } from './review.repository';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
@@ -6,14 +8,32 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @Injectable()
 export class ReviewsService {
-  constructor(private readonly reviewRepository: ReviewRepository) { }
+  private cacheKeys = new Set<string>();
+
+  constructor(
+    private readonly reviewRepository: ReviewRepository,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) { }
+
+  private async invalidateReviewsCache() {
+    try {
+      for (const key of this.cacheKeys) {
+        await this.cacheManager.del(key);
+      }
+      this.cacheKeys.clear();
+    } catch {
+      // ignore
+    }
+  }
 
   async create(createReviewDto: CreateReviewDto) {
     const payload = {
       ...createReviewDto,
       isApproved: createReviewDto.isApproved !== undefined ? createReviewDto.isApproved : true,
     };
-    return this.reviewRepository.create(payload);
+    const created = await this.reviewRepository.create(payload);
+    await this.invalidateReviewsCache();
+    return created;
   }
 
   async findAll(
@@ -22,6 +42,14 @@ export class ReviewsService {
     batch?: string,
     isApproved?: boolean,
   ) {
+    const cacheKey = `reviews_${JSON.stringify(queryDto)}_${rating}_${batch}_${isApproved}`;
+    try {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) return cached;
+    } catch {
+      // ignore
+    }
+
     const additionalFilter: Record<string, any> = {};
     if (rating !== undefined && rating !== null) {
       additionalFilter.rating = Number(rating);
@@ -34,11 +62,20 @@ export class ReviewsService {
       additionalFilter.isApproved = isApp ? { $ne: false } : false;
     }
 
-    return this.reviewRepository.findAll(
+    const res = await this.reviewRepository.findAll(
       queryDto,
       ['name', 'batch', 'feedback'],
       additionalFilter,
     );
+
+    try {
+      this.cacheKeys.add(cacheKey);
+      await this.cacheManager.set(cacheKey, res, 60 * 1000);
+    } catch {
+      // ignore
+    }
+
+    return res;
   }
 
   async findOne(id: string) {
@@ -46,11 +83,15 @@ export class ReviewsService {
   }
 
   async update(id: string, updateReviewDto: UpdateReviewDto) {
-    return this.reviewRepository.update(id, updateReviewDto);
+    const updated = await this.reviewRepository.update(id, updateReviewDto);
+    await this.invalidateReviewsCache();
+    return updated;
   }
 
   async remove(id: string) {
-    return this.reviewRepository.delete(id);
+    const res = await this.reviewRepository.delete(id);
+    await this.invalidateReviewsCache();
+    return res;
   }
 
   async seedDefaultReviews() {

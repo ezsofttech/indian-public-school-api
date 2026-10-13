@@ -1,17 +1,37 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { MenuItemsRepository } from './menu-items.repository';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 
 @Injectable()
 export class MenuItemsService {
-  constructor(private readonly repo: MenuItemsRepository) {}
+  private cacheKeys = new Set<string>();
 
-  create(createDto: CreateMenuItemDto) {
-    return this.repo.create(createDto);
+  constructor(
+    private readonly repo: MenuItemsRepository,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
+
+  private async invalidateMenuCache() {
+    try {
+      for (const key of this.cacheKeys) {
+        await this.cacheManager.del(key);
+      }
+      this.cacheKeys.clear();
+    } catch {
+      // ignore
+    }
   }
 
-  findAll(
+  async create(createDto: CreateMenuItemDto) {
+    const res = await this.repo.create(createDto);
+    await this.invalidateMenuCache();
+    return res;
+  }
+
+  async findAll(
     options?:
       | {
           category?: string;
@@ -26,19 +46,38 @@ export class MenuItemsService {
       | string,
     publishedOnly = false,
   ) {
-    return this.repo.findAll(options, publishedOnly);
+    const cacheKey = `menu_items_${JSON.stringify(options || {})}_${publishedOnly}`;
+    try {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) return cached;
+    } catch {
+      // ignore
+    }
+
+    const res = await this.repo.findAll(options, publishedOnly);
+    try {
+      this.cacheKeys.add(cacheKey);
+      await this.cacheManager.set(cacheKey, res, 60 * 1000);
+    } catch {
+      // ignore
+    }
+    return res;
   }
 
   findOne(id: string) {
     return this.repo.findOne(id);
   }
 
-  update(id: string, updateDto: UpdateMenuItemDto) {
-    return this.repo.update(id, updateDto);
+  async update(id: string, updateDto: UpdateMenuItemDto) {
+    const res = await this.repo.update(id, updateDto);
+    await this.invalidateMenuCache();
+    return res;
   }
 
-  remove(id: string) {
-    return this.repo.remove(id);
+  async remove(id: string) {
+    const res = await this.repo.remove(id);
+    await this.invalidateMenuCache();
+    return res;
   }
 
   async seedDefaultMenuItems() {
@@ -102,6 +141,7 @@ export class MenuItemsService {
       await this.repo.upsertOne(item);
     }
 
+    await this.invalidateMenuCache();
     return this.repo.findAll();
   }
 }

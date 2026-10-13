@@ -1,4 +1,6 @@
 import { Injectable, Inject, forwardRef, Logger } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { GalleryRepository } from './gallery.repository';
 import { CreateGalleryDto } from './dto/create-gallery.dto';
 import { UpdateGalleryDto } from './dto/update-gallery.dto';
@@ -25,12 +27,26 @@ function cleanAssetPath(url: string): string {
 @Injectable()
 export class GalleryService {
   private readonly logger = new Logger(GalleryService.name);
+  private cacheKeys = new Set<string>();
 
   constructor(
     private readonly galleryRepository: GalleryRepository,
     @Inject(forwardRef(() => UploadsService))
     private readonly uploadsService: UploadsService,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {}
+
+  private async invalidateGalleryCache() {
+    try {
+      for (const key of this.cacheKeys) {
+        await this.cacheManager.del(key);
+      }
+      this.cacheKeys.clear();
+    } catch {
+      // ignore
+    }
+  }
 
   async create(createGalleryDto: CreateGalleryDto) {
     if (createGalleryDto.eventName) {
@@ -65,13 +81,25 @@ export class GalleryService {
       if (items.length > 0) {
         const docId = (items[0] as any)._id || (items[0] as any).id;
         this.logger.log(`Existing gallery document found for fileUrl (${String(docId)}). Updating instead of creating duplicate.`);
-        return this.galleryRepository.update(String(docId), createGalleryDto);
+        const res = await this.galleryRepository.update(String(docId), createGalleryDto);
+        await this.invalidateGalleryCache();
+        return res;
       }
     }
-    return this.galleryRepository.create(createGalleryDto);
+    const created = await this.galleryRepository.create(createGalleryDto);
+    await this.invalidateGalleryCache();
+    return created;
   }
 
   async findAll(queryDto: PaginationQueryDto = {}, eventType?: string, directory?: string) {
+    const cacheKey = `gallery_list_${JSON.stringify(queryDto)}_${eventType || ''}_${directory || ''}`;
+    try {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) return cached;
+    } catch {
+      // ignore
+    }
+
     const page = Math.max(1, Number(queryDto.page) || 1);
     const limit = Math.max(1, Math.min(500, Number(queryDto.limit) || 10));
     const search = (queryDto.search || '').trim().toLowerCase();
@@ -223,7 +251,7 @@ export class GalleryService {
     const skip = (page - 1) * limit;
     const items = combined.slice(skip, skip + limit);
 
-    return {
+    const result = {
       items,
       total,
       page,
@@ -232,6 +260,15 @@ export class GalleryService {
       hasNextPage: page < totalPages,
       hasPrevPage: page > 1,
     };
+
+    try {
+      this.cacheKeys.add(cacheKey);
+      await this.cacheManager.set(cacheKey, result, 60 * 1000);
+    } catch {
+      // ignore
+    }
+
+    return result;
   }
 
   async findOne(id: string) {
@@ -267,13 +304,15 @@ export class GalleryService {
     }
     if (id.startsWith('cdn-')) {
       // Upsert into MongoDB so updates/metadata changes persist
-      return this.galleryRepository.create({
+      const created = await this.galleryRepository.create({
         eventName: updateGalleryDto.eventName || 'Cloudinary Asset',
         eventType: updateGalleryDto.eventType || 'General',
         directory: updateGalleryDto.directory || `/album/${(updateGalleryDto.eventType || 'General').toLowerCase()}`,
         fileUrl: updateGalleryDto.fileUrl || [],
         mimeType: updateGalleryDto.mimeType,
       });
+      await this.invalidateGalleryCache();
+      return created;
     }
 
     try {
@@ -291,7 +330,9 @@ export class GalleryService {
       this.logger.warn(`Could not perform Cloudinary cleanup on update for ${id}: ${err}`);
     }
 
-    return this.galleryRepository.update(id, updateGalleryDto);
+    const updated = await this.galleryRepository.update(id, updateGalleryDto);
+    await this.invalidateGalleryCache();
+    return updated;
   }
 
   async remove(id: string) {
@@ -316,6 +357,7 @@ export class GalleryService {
 
       // Delete directly from Cloudinary CDN storage
       await this.uploadsService.deleteFileByUrl(targetUrl);
+      await this.invalidateGalleryCache();
       return { deleted: true, id };
     }
 
@@ -331,7 +373,9 @@ export class GalleryService {
       this.logger.warn(`Could not perform Cloudinary cleanup on delete for ${id}: ${err}`);
     }
 
-    return this.galleryRepository.delete(id);
+    const deleted = await this.galleryRepository.delete(id);
+    await this.invalidateGalleryCache();
+    return deleted;
   }
 }
 

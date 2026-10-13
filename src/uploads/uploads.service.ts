@@ -1,5 +1,7 @@
 import { Injectable, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { CloudinaryStorageStrategy } from './strategies/cloudinary-storage.strategy';
 import { LocalStorageStrategy } from './strategies/local-storage.strategy';
 import { GalleryRepository } from '../gallery/gallery.repository';
@@ -19,10 +21,22 @@ export class UploadsService {
     private readonly fileCompressorService: FileCompressorService,
     @Inject(forwardRef(() => GalleryRepository))
     private readonly galleryRepository: GalleryRepository,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
+
+  private async invalidateCloudinaryCache() {
+    try {
+      await this.cacheManager.del('cloudinary_resources_root');
+      await this.cacheManager.del('cloudinary_resources_all');
+    } catch {
+      // ignore
+    }
+  }
 
   async deleteFileByUrl(url: string): Promise<boolean> {
     if (!url || typeof url !== 'string') return false;
+
+    await this.invalidateCloudinaryCache();
 
     const provider = this.configService.get<string>('STORAGE_PROVIDER', 'cloudinary');
 
@@ -172,6 +186,8 @@ export class UploadsService {
 
     const plainAsset = typeof (asset as any).toObject === 'function' ? (asset as any).toObject() : asset;
 
+    await this.invalidateCloudinaryCache();
+
     return {
       ...plainAsset,
       url: relativeUrl,
@@ -198,6 +214,8 @@ export class UploadsService {
   }
 
   async remove(id: string) {
+    await this.invalidateCloudinaryCache();
+
     if (id.startsWith('cdn-') || id.includes('http') || id.includes('/')) {
       let targetUrl = id.replace(/^cdn-/, '');
 
@@ -234,7 +252,25 @@ export class UploadsService {
   }
 
   async getCloudinaryResources(folder?: string) {
-    return this.cloudinaryStrategy.listResources(folder);
+    const cacheKey = `cloudinary_resources_${folder || 'root'}`;
+    try {
+      const cached = await this.cacheManager.get<any[]>(cacheKey);
+      if (cached && Array.isArray(cached) && cached.length > 0) {
+        return cached;
+      }
+    } catch {
+      // ignore
+    }
+
+    const resources = await this.cloudinaryStrategy.listResources(folder);
+    if (resources && Array.isArray(resources) && resources.length > 0) {
+      try {
+        await this.cacheManager.set(cacheKey, resources, 120 * 1000); // 2 minutes
+      } catch {
+        // ignore
+      }
+    }
+    return resources;
   }
 }
 
