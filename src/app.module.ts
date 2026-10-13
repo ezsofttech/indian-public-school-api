@@ -19,12 +19,17 @@ import { CareersModule } from './careers/careers.module';
 import { ThemeModule } from './theme/theme.module';
 
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { CacheModule } from '@nestjs/cache-manager';
 import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 60 * 1000,
     }),
     EventEmitterModule.forRoot(),
     MongooseModule.forRootAsync({

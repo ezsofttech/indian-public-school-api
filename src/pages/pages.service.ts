@@ -1,4 +1,6 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Inject, OnModuleInit } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreatePageDto } from './dto/create-page.dto';
 import { UpdatePageDto } from './dto/update-page.dto';
@@ -6,7 +8,12 @@ import { PagesRepository } from './pages.repository';
 
 @Injectable()
 export class PagesService implements OnModuleInit {
-  constructor(private readonly pagesRepository: PagesRepository) { }
+  private cacheKeys = new Set<string>();
+
+  constructor(
+    private readonly pagesRepository: PagesRepository,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) { }
 
   async onModuleInit() {
     await this.seedDefaultPages();
@@ -110,6 +117,18 @@ export class PagesService implements OnModuleInit {
     return slug ? `/pages/${slug}` : '';
   }
 
+  private async invalidatePagesCache() {
+    try {
+      for (const key of this.cacheKeys) {
+        await this.cacheManager.del(key);
+      }
+      this.cacheKeys.clear();
+      await this.cacheManager.del('pages_published_all');
+    } catch {
+      // ignore
+    }
+  }
+
   async create(createDto: CreatePageDto) {
     try {
       const payload: Record<string, any> = { ...createDto };
@@ -119,20 +138,37 @@ export class PagesService implements OnModuleInit {
       }
       payload.targetUrl = this.formatTargetUrl(payload.targetUrl, payload.slug);
 
-      return await this.pagesRepository.create(payload);
+      const created = await this.pagesRepository.create(payload);
+      await this.invalidatePagesCache();
+      return created;
     } catch (err: any) {
       console.error('[PagesService.create Error]', err);
       throw err;
     }
   }
 
-  async findPublishedAll() {
-    return this.pagesRepository.findPublishedAll();
+  async findPublishedAll(): Promise<any[]> {
+    const cacheKey = 'pages_published_all';
+    try {
+      const cached = await this.cacheManager.get<any[]>(cacheKey);
+      if (cached && Array.isArray(cached)) return cached;
+    } catch {
+      // ignore
+    }
+
+    const pages = (await this.pagesRepository.findPublishedAll()) || [];
+    try {
+      this.cacheKeys.add(cacheKey);
+      await this.cacheManager.set(cacheKey, pages, 60 * 1000);
+    } catch {
+      // ignore
+    }
+    return pages;
   }
 
   async findAll(queryDto: PaginationQueryDto = {}) {
     if (String((queryDto as any).all).toLowerCase() === 'true' || String((queryDto as any).limit).toLowerCase() === 'all') {
-      const items = await this.pagesRepository.findPublishedAll();
+      const items: any[] = (await this.findPublishedAll()) || [];
       return {
         items,
         total: items.length,
@@ -186,7 +222,24 @@ export class PagesService implements OnModuleInit {
   }
 
   async findBySlug(slug: string) {
-    return this.pagesRepository.findBySlugOrId(slug);
+    const cacheKey = `page_slug_${slug}`;
+    try {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) return cached;
+    } catch {
+      // ignore
+    }
+
+    const page = await this.pagesRepository.findBySlugOrId(slug);
+    if (page) {
+      try {
+        this.cacheKeys.add(cacheKey);
+        await this.cacheManager.set(cacheKey, page, 60 * 1000);
+      } catch {
+        // ignore
+      }
+    }
+    return page;
   }
 
   async update(id: string, updateDto: UpdatePageDto) {
@@ -198,7 +251,9 @@ export class PagesService implements OnModuleInit {
       }
       payload.targetUrl = this.formatTargetUrl(payload.targetUrl, payload.slug);
 
-      return await this.pagesRepository.update(id, payload);
+      const updated = await this.pagesRepository.update(id, payload);
+      await this.invalidatePagesCache();
+      return updated;
     } catch (err: any) {
       console.error('[PagesService.update Error]', err);
       throw err;
@@ -206,7 +261,9 @@ export class PagesService implements OnModuleInit {
   }
 
   async remove(id: string) {
-    return this.pagesRepository.delete(id);
+    const res = await this.pagesRepository.delete(id);
+    await this.invalidatePagesCache();
+    return res;
   }
 }
 
