@@ -134,7 +134,7 @@ export const DEFAULT_PRESET_THEMES = [
     isActive: false,
     colors: {
       primary: 'oklch(0.62 0.18 230)',
-      primaryForeground: 'oklch(0.12 0.05 240)',
+      primaryForeground: 'oklch(0.985 0.005 250)',
       secondary: 'oklch(0.22 0.04 240)',
       secondaryForeground: 'oklch(0.95 0.02 230)',
       accent: 'oklch(0.26 0.05 240)',
@@ -215,6 +215,14 @@ export class ThemeService implements OnModuleInit {
         updateData.typography = {
           ...t.typography,
           fontDisplay: '"Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif',
+        };
+        updated = true;
+      }
+
+      if (t.isPreset && t.slug === 'cyber-dark-sapphire' && t.colors?.primaryForeground?.includes('0.1')) {
+        updateData.colors = {
+          ...t.colors,
+          primaryForeground: 'oklch(0.985 0.005 250)',
         };
         updated = true;
       }
