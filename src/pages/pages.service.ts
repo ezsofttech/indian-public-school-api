@@ -16,7 +16,7 @@ export class PagesService implements OnModuleInit {
   ) { }
 
   async onModuleInit() {
-    await this.seedDefaultPages();
+    // Note: Auto-seeding default pages disabled so everything is controlled from DB.
   }
 
   async seedDefaultPages() {

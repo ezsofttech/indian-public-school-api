@@ -16,7 +16,7 @@ export class SchoolSettingsService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.seedSiteDatasource();
+    // Note: Auto-seeding disabled to ensure everything comes from DB and never overwrites user configurations.
     try {
       const active = await this.schoolSettingRepository.findActive();
       if (active && (!active.status || active.status !== 'Active')) {
