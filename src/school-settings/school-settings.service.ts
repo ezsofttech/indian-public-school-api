@@ -38,7 +38,6 @@ export class SchoolSettingsService implements OnModuleInit {
           category: 'Content',
           description: 'Full home page and website section layout configuration datasource',
           value: jsonContent,
-          isPublic: true,
           status: 'Active',
         });
       }
