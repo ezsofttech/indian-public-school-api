@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, RequestMethod } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
@@ -20,7 +20,6 @@ async function bootstrap() {
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:3002',
-      'https://dev-ips.netlify.app',
       'https://indian-public-school-app-git-dev-omr31997-6360s-projects.vercel.app',
       'https://indianpublicschool.devs.surf',
       'https://indian-public-school-app.vercel.app',
@@ -47,7 +46,13 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new TransformInterceptor());
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', {
+    exclude: [
+      { path: '', method: RequestMethod.GET },
+      { path: 'health', method: RequestMethod.GET },
+      { path: 'api/v1/health', method: RequestMethod.GET },
+    ],
+  });
 
   // Swagger Documentation Setup
   const config = new DocumentBuilder()
