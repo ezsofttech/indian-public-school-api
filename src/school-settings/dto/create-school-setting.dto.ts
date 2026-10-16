@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateSchoolSettingDto {
   @ApiProperty({ example: 'school_name', description: 'Unique setting key identifier' })
@@ -20,11 +20,6 @@ export class CreateSchoolSettingDto {
   @IsOptional()
   @IsString()
   description?: string;
-
-  @ApiPropertyOptional({ example: true, default: true, description: 'Whether the setting is publicly accessible' })
-  @IsOptional()
-  @IsBoolean()
-  isPublic?: boolean;
 
   @ApiPropertyOptional({ example: 'Active', description: 'Active status of setting' })
   @IsOptional()

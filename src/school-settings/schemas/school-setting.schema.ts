@@ -17,9 +17,6 @@ export class SchoolSetting {
   @Prop()
   description?: string;
 
-  @Prop({ default: true })
-  isPublic!: boolean;
-
   @Prop({ default: 'Active', enum: ['Active', 'Inactive'] })
   status!: string;
 }

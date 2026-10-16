@@ -38,7 +38,6 @@ export class SchoolSettingsService implements OnModuleInit {
           category: 'Content',
           description: 'Full home page and website section layout configuration datasource',
           value: jsonContent,
-          isPublic: true,
           status: 'Active',
         });
       }
@@ -67,7 +66,9 @@ export class SchoolSettingsService implements OnModuleInit {
   }
 
   async findAll(queryDto: PaginationQueryDto = {}, category?: string, status?: string) {
-    const additionalFilter: Record<string, any> = {};
+    const additionalFilter: Record<string, any> = {
+      key: { $ne: 'site_logo' },
+    };
     if (category && category !== 'All') additionalFilter.category = category;
     if (status && status !== 'All') {
       const st = String(status).toLowerCase();
