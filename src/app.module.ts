@@ -17,6 +17,7 @@ import { RegardingModule } from './regarding/regarding.module';
 import { PagesModule } from './pages/pages.module';
 import { CareersModule } from './careers/careers.module';
 import { ThemeModule } from './theme/theme.module';
+import { PublicDisclosureModule } from './public-disclosure/public-disclosure.module';
 
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { CacheModule } from '@nestjs/cache-manager';
@@ -59,10 +60,10 @@ import { NotificationsModule } from './notifications/notifications.module';
     PagesModule,
     CareersModule,
     ThemeModule,
+    PublicDisclosureModule,
     NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
-
+export class AppModule {}
