@@ -21,9 +21,11 @@ export class InquiriesService {
   async create(createInquiryDto: CreateInquiryDto) {
     const createdInquiry: any = await this.inquiryRepository.create(createInquiryDto);
 
+    const generatedId = createdInquiry.publicId || (createdInquiry._id ? createdInquiry._id.toString() : '');
+
     // Emit event for notification service
     this.eventEmitter.emit('inquiry.created', {
-      inquiryId: createdInquiry._id ? createdInquiry._id.toString() : createdInquiry.publicId,
+      inquiryId: generatedId,
       name: createdInquiry.name,
       email: createdInquiry.email,
       contact: createdInquiry.contact,

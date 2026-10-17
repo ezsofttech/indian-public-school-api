@@ -81,6 +81,7 @@ function serializeResponse(
     }
   }
   if (rawObj.publicId) {
+    result._id = String(rawObj.publicId);
     result.id = String(rawObj.publicId);
   }
 

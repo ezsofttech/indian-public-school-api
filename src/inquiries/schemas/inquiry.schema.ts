@@ -24,10 +24,10 @@ export class Inquiry {
   @Prop({ required: true, trim: true })
   name!: string;
 
-  @Prop({ required: true, trim: true })
+  @Prop({ required: false, trim: true, default: '' })
   contact!: string;
 
-  @Prop({ required: true, trim: true, lowercase: true })
+  @Prop({ required: false, trim: true, lowercase: true, default: '' })
   email!: string;
 
   @Prop({ required: true, trim: true, default: 'General' })

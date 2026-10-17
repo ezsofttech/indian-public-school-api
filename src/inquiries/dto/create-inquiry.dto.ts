@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, ValidateIf } from 'class-validator';
 import { InquiryStatus } from '../schemas/inquiry.schema';
 
 export class CreateInquiryDto {
@@ -8,15 +8,16 @@ export class CreateInquiryDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ example: '+919876543210', description: 'Contact phone number' })
+  @ApiPropertyOptional({ example: '+919876543210', description: 'Contact phone number' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  contact: string;
+  contact?: string;
 
-  @ApiProperty({ example: 'rahul.sharma@example.com', description: 'Email address' })
+  @ApiPropertyOptional({ example: 'rahul.sharma@example.com', description: 'Email address' })
+  @IsOptional()
+  @ValidateIf((o) => typeof o.email === 'string' && o.email.trim() !== '')
   @IsEmail()
-  @IsNotEmpty()
-  email: string;
+  email?: string;
 
   @ApiProperty({ example: 'Admission', description: 'Category or type of inquiry (e.g. Admission, Fee Structure, General, Transport)' })
   @IsString()

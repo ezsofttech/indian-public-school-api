@@ -29,6 +29,7 @@ export class ReviewsService {
   async create(createReviewDto: CreateReviewDto) {
     const payload = {
       ...createReviewDto,
+      name: createReviewDto.name.trim(),
       isApproved: createReviewDto.isApproved !== undefined ? createReviewDto.isApproved : true,
     };
     const created = await this.reviewRepository.create(payload);
