@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { MenuItem, MenuItemDocument } from './schemas/menu-item.schema';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
+import { generatePublicId } from '../common/utils/public-id';
 
 @Injectable()
 export class MenuItemsRepository {
@@ -39,6 +40,7 @@ export class MenuItemsRepository {
       .findOne({
         $or: [
           ...(isMongoId ? [{ _id: new Types.ObjectId(parentIdStr) }] : []),
+          { publicId: parentIdStr },
           { menuId: parentIdStr },
           { slug: parentIdStr },
         ],
@@ -139,10 +141,16 @@ export class MenuItemsRepository {
       createDto.category || 'Header',
     );
 
+    const publicId =
+      (createDto as any).publicId && String((createDto as any).publicId).trim()
+        ? String((createDto as any).publicId).trim()
+        : generatePublicId('MENU');
+
     const payload = {
       ...createDto,
       slug,
       menuId,
+      publicId,
       parentId,
       level,
     };
@@ -160,10 +168,16 @@ export class MenuItemsRepository {
 
     const { parentId, level } = await this.resolveParentAndLevel(dto.parentId);
 
+    const publicId =
+      (dto as any).publicId && String((dto as any).publicId).trim()
+        ? String((dto as any).publicId).trim()
+        : generatePublicId('MENU');
+
     const payload = {
       ...dto,
       slug,
       menuId,
+      publicId,
       parentId,
       level,
     };
@@ -251,11 +265,12 @@ export class MenuItemsRepository {
       .lean()
       .exec();
 
-    // Build lookup map for parent resolution by ObjectId, menuId, or slug
+    // Build lookup map for parent resolution by ObjectId, publicId, menuId, or slug
     const idMap = new Map<string, any>();
     items.forEach((item: any) => {
       const idStr = String(item._id);
       idMap.set(idStr, item);
+      if (item.publicId) idMap.set(String(item.publicId), item);
       if (item.menuId) idMap.set(String(item.menuId), item);
       if (item.slug) idMap.set(String(item.slug), item);
     });
@@ -266,12 +281,20 @@ export class MenuItemsRepository {
         const parentKey = String(item.parentId);
         parentObj = idMap.get(parentKey) || null;
       }
+      const publicId = item.publicId || item.menuId || String(item._id);
       return {
         ...item,
-        id: String(item._id),
+        id: publicId,
+        publicId,
         parentTitle: parentObj ? parentObj.title : null,
         parent: parentObj
-          ? { _id: String(parentObj._id), title: parentObj.title, menuId: parentObj.menuId }
+          ? {
+              _id: String(parentObj._id),
+              id: parentObj.publicId || parentObj.menuId || String(parentObj._id),
+              publicId: parentObj.publicId || parentObj.menuId,
+              title: parentObj.title,
+              menuId: parentObj.menuId,
+            }
           : null,
       };
     });
@@ -354,8 +377,8 @@ export class MenuItemsRepository {
   async findOne(idOrMenuId: string): Promise<any> {
     const isMongoId = Types.ObjectId.isValid(idOrMenuId);
     const filter = isMongoId
-      ? { _id: new Types.ObjectId(idOrMenuId) }
-      : { $or: [{ menuId: idOrMenuId }, { slug: idOrMenuId }] };
+      ? { $or: [{ _id: new Types.ObjectId(idOrMenuId) }, { publicId: idOrMenuId }, { menuId: idOrMenuId }] }
+      : { $or: [{ publicId: idOrMenuId }, { menuId: idOrMenuId }, { slug: idOrMenuId }] };
 
     const item = await this.menuItemModel.findOne(filter).lean().exec();
     if (!item) {
@@ -380,8 +403,8 @@ export class MenuItemsRepository {
   async update(idOrMenuId: string, updateDto: UpdateMenuItemDto): Promise<any> {
     const isMongoId = Types.ObjectId.isValid(idOrMenuId);
     const filter = isMongoId
-      ? { _id: new Types.ObjectId(idOrMenuId) }
-      : { $or: [{ menuId: idOrMenuId }, { slug: idOrMenuId }] };
+      ? { $or: [{ _id: new Types.ObjectId(idOrMenuId) }, { publicId: idOrMenuId }, { menuId: idOrMenuId }] }
+      : { $or: [{ publicId: idOrMenuId }, { menuId: idOrMenuId }, { slug: idOrMenuId }] };
 
     const existing = await this.menuItemModel.findOne(filter).exec();
     if (!existing) {
@@ -434,8 +457,8 @@ export class MenuItemsRepository {
   async remove(idOrMenuId: string): Promise<{ deleted: boolean }> {
     const isMongoId = Types.ObjectId.isValid(idOrMenuId);
     const filter = isMongoId
-      ? { _id: new Types.ObjectId(idOrMenuId) }
-      : { $or: [{ menuId: idOrMenuId }, { slug: idOrMenuId }] };
+      ? { $or: [{ _id: new Types.ObjectId(idOrMenuId) }, { publicId: idOrMenuId }, { menuId: idOrMenuId }] }
+      : { $or: [{ publicId: idOrMenuId }, { menuId: idOrMenuId }, { slug: idOrMenuId }] };
 
     const itemToDelete = await this.menuItemModel.findOne(filter).exec();
     if (!itemToDelete) {

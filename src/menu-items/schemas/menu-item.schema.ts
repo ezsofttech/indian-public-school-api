@@ -1,10 +1,20 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
+import { generatePublicId } from '../../common/utils/public-id';
 
 export type MenuItemDocument = MenuItem & Document;
 
 @Schema({ timestamps: true })
 export class MenuItem {
+  @Prop({
+    required: false,
+    unique: true,
+    sparse: true,
+    index: true,
+    default: () => generatePublicId('MENU'),
+  })
+  publicId!: string;
+
   @Prop({ required: true, unique: true, index: true })
   menuId!: string;
 
