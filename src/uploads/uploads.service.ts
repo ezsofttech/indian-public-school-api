@@ -6,7 +6,7 @@ import { CloudinaryStorageStrategy } from './strategies/cloudinary-storage.strat
 import { LocalStorageStrategy } from './strategies/local-storage.strategy';
 import { GalleryRepository } from '../gallery/gallery.repository';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { extractCloudinaryPublicId, formatFileSizeErrorMessage } from './utils/cloudinary-helper';
+import { extractCloudinaryPublicId, formatFileSizeErrorMessage, formatBytes } from './utils/cloudinary-helper';
 import { FileCompressorService } from './services/file-compressor.service';
 import { toRelativeMediaPath, getCloudinaryRootFolder } from '../common/config';
 
@@ -271,6 +271,138 @@ export class UploadsService {
       }
     }
     return resources;
+  }
+
+  async getStorageUsage() {
+    const cacheKey = 'storage_usage_summary';
+    try {
+      const cached = await this.cacheManager.get<any>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    } catch {
+      // ignore
+    }
+
+    const provider = this.configService.get<string>('STORAGE_PROVIDER', 'cloudinary');
+
+    if (provider !== 'cloudinary') {
+      const localResult = {
+        provider: 'local',
+        plan: 'Local Storage',
+        lastUpdated: new Date().toISOString(),
+        credits: null,
+        storage: {
+          usedBytes: 0,
+          usedFormatted: '0 MB',
+          creditsUsage: 0,
+        },
+        bandwidth: {
+          usedBytes: 0,
+          usedFormatted: '0 MB',
+          creditsUsage: 0,
+        },
+        transformations: {
+          usage: 0,
+          creditsUsage: 0,
+        },
+        resources: {
+          total: 0,
+          derived: 0,
+          objects: 0,
+        },
+        mediaLimits: {
+          imageMax: '10 MB',
+          videoMax: '100 MB',
+          rawMax: '10 MB',
+        },
+        status: 'ok',
+      };
+      return localResult;
+    }
+
+    try {
+      const raw = await this.cloudinaryStrategy.getUsage();
+      if (!raw) {
+        return {
+          provider: 'cloudinary',
+          plan: 'Free',
+          lastUpdated: new Date().toISOString(),
+          status: 'warning',
+          message: 'Unable to retrieve live Cloudinary usage details or rate limited.',
+        };
+      }
+
+      const creditsUsage = raw.credits?.usage ?? 0;
+      const creditsLimit = raw.credits?.limit ?? 25;
+      const creditsPercentUsed = raw.credits?.used_percent ?? (creditsLimit > 0 ? (creditsUsage / creditsLimit) * 100 : 0);
+      const creditsRemaining = Math.max(0, creditsLimit - creditsUsage);
+      const creditsPercentRemaining = Math.max(0, 100 - creditsPercentUsed);
+
+      const storageBytes = raw.storage?.usage ?? 0;
+      const bandwidthBytes = raw.bandwidth?.usage ?? 0;
+
+      const result = {
+        provider: 'cloudinary',
+        plan: raw.plan || 'Free',
+        lastUpdated: raw.last_updated || new Date().toISOString().split('T')[0],
+        dateRequested: raw.date_requested,
+        credits: {
+          usage: Number(creditsUsage.toFixed(2)),
+          limit: creditsLimit,
+          remaining: Number(creditsRemaining.toFixed(2)),
+          percentUsed: Number(creditsPercentUsed.toFixed(2)),
+          percentRemaining: Number(creditsPercentRemaining.toFixed(2)),
+        },
+        storage: {
+          usedBytes: storageBytes,
+          usedFormatted: formatBytes(storageBytes),
+          creditsUsage: raw.storage?.credits_usage ?? 0,
+        },
+        bandwidth: {
+          usedBytes: bandwidthBytes,
+          usedFormatted: formatBytes(bandwidthBytes),
+          creditsUsage: raw.bandwidth?.credits_usage ?? 0,
+        },
+        transformations: {
+          usage: raw.transformations?.usage ?? 0,
+          creditsUsage: raw.transformations?.credits_usage ?? 0,
+          breakdown: raw.transformations?.breakdown,
+        },
+        resources: {
+          total: raw.resources ?? 0,
+          derived: raw.derived_resources ?? 0,
+          objects: raw.objects?.usage ?? 0,
+        },
+        mediaLimits: {
+          imageMax: formatBytes(raw.media_limits?.image_max_size_bytes || 10485760),
+          videoMax: formatBytes(raw.media_limits?.video_max_size_bytes || 104857600),
+          rawMax: formatBytes(raw.media_limits?.raw_max_size_bytes || 10485760),
+        },
+        rateLimit: {
+          allowed: raw.rate_limit_allowed,
+          remaining: raw.rate_limit_remaining,
+          resetAt: raw.rate_limit_reset_at,
+        },
+        status: creditsPercentUsed > 90 ? 'critical' : creditsPercentUsed > 75 ? 'warning' : 'ok',
+      };
+
+      try {
+        await this.cacheManager.set(cacheKey, result, 180 * 1000); // 3 minutes cache
+      } catch {
+        // ignore
+      }
+
+      return result;
+    } catch (err: any) {
+      this.logger.error(`Error in getStorageUsage: ${err.message}`);
+      return {
+        provider: 'cloudinary',
+        plan: 'Free',
+        status: 'error',
+        message: err.message,
+      };
+    }
   }
 }
 

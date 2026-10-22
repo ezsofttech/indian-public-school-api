@@ -86,18 +86,21 @@ export function toRelativeMediaPath(pathOrUrl: unknown, configService?: ConfigSe
   const rootFolder = getCloudinaryRootFolder(configService);
   const escapedRoot = rootFolder ? rootFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
 
-  let clean = path.replace(/^\/(?:image|video|raw)\/upload\/(?:v\d+\/)?/i, '/');
+  let clean = path.replace(/^https?:\/\/[^\/]+/i, '');
 
-  if (escapedRoot) {
-    clean = clean.replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/');
+  let prev = '';
+  while (prev !== clean) {
+    prev = clean;
+    clean = clean
+      .replace(/^\/(?:(?:image|video|raw)\/upload\/)+/i, '/')
+      .replace(/^\/(?:(?:f_auto(?:,q_auto)?|q_auto)\/)+/i, '/')
+      .replace(/^\/v\d+\//i, '/')
+      .replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/')
+      .replace(/^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i, '/')
+      .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
+      .replace(/^\/assets\/assets\//i, '/')
+      .replace(/^\/assets\//i, '/');
   }
-
-  // Generic fallback replacement for root folder / assets
-  clean = clean
-    .replace(/^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i, '/')
-    .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
-    .replace(/^\/assets\/assets\//i, '/')
-    .replace(/^\/assets\//i, '/');
 
   // Strip duplicate .pdf.pdf
   clean = clean.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
@@ -117,12 +120,34 @@ export function toFullMediaUrl(
   if (typeof pathOrUrl !== 'string' || !pathOrUrl.trim()) return pathOrUrl;
 
   let path = pathOrUrl.trim();
+  const cfg = typeof mimeTypeOrConfig === 'object' ? mimeTypeOrConfig : configService;
+  const mediaPreset = (cfg?.get<string>('MEDIA_PRESET') || process.env.MEDIA_PRESET || 'default').toLowerCase().trim();
+
   if (path.startsWith('http://') || path.startsWith('https://')) {
+    if (path.includes('res.cloudinary.com')) {
+      // If default preset, check if this is a Settings asset that can be served locally
+      if (mediaPreset === 'default' && (path.includes('/Settings/') || path.includes('/assets/Settings/'))) {
+        const match = path.match(/\/(Settings\/[^?#]+)/i);
+        if (match && match[1]) {
+          return `/assets/${match[1]}`;
+        }
+      }
+
+      // Inject f_auto,q_auto for Cloudinary image URLs if not already present
+      if (
+        path.includes('/image/upload/') &&
+        !path.includes('/image/upload/f_auto') &&
+        !path.includes('f_auto') &&
+        !path.includes('/raw/upload/') &&
+        !/\.pdf($|\?|#)/i.test(path)
+      ) {
+        return path.replace('/image/upload/', '/image/upload/f_auto,q_auto/');
+      }
+    }
     return path;
   }
 
   const mimeType = typeof mimeTypeOrConfig === 'string' ? mimeTypeOrConfig : undefined;
-  const cfg = typeof mimeTypeOrConfig === 'object' ? mimeTypeOrConfig : configService;
 
   const cloudBase = getCloudinaryCloudBaseUrl(cfg);
   const rootFolder = getCloudinaryRootFolder(cfg);
@@ -148,26 +173,49 @@ export function toFullMediaUrl(
   }
 
   const escapedRoot = rootPath ? rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
-  let cleanPath = path.replace(/^\/(?:image|video|raw)\/upload\/(?:v\d+\/)?/i, '/');
-  
-  if (escapedRoot) {
-    cleanPath = cleanPath.replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/');
+  let cleanPath = path.replace(/^https?:\/\/[^\/]+/i, '');
+
+  let prevPath = '';
+  while (prevPath !== cleanPath) {
+    prevPath = cleanPath;
+    cleanPath = cleanPath
+      .replace(/^\/(?:(?:image|video|raw)\/upload\/)+/i, '/')
+      .replace(/^\/(?:(?:f_auto(?:,q_auto)?|q_auto)\/)+/i, '/')
+      .replace(/^\/v\d+\//i, '/')
+      .replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/')
+      .replace(/^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i, '/')
+      .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
+      .replace(/^\/assets\/assets\//i, '/')
+      .replace(/^\/assets\//i, '/');
   }
-  cleanPath = cleanPath
-    .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
-    .replace(/^\/assets\//i, '/');
 
   // Normalize duplicate .pdf.pdf extension
   cleanPath = cleanPath.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
 
   const normalized = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
 
+  // If preset is default, serve local Settings assets locally
+  if (mediaPreset === 'default') {
+    if (
+      normalized.startsWith('/Settings/') ||
+      normalized.startsWith('/assets/Settings/')
+    ) {
+      return `/assets${normalized.replace(/^\/assets/, '')}`;
+    }
+  }
+
   const envUrl = cfg?.get<string>('MEDIA_BASE_URL') || process.env.MEDIA_BASE_URL;
   if (envUrl && envUrl.trim() && !envUrl.includes('res.cloudinary.com')) {
     return `${envUrl.trim().replace(/\/+$/, '')}${normalized}`;
   }
 
-  return `${cloudBase}${prefix}/${rootPath}${normalized}`;
+  // Optimize Cloudinary image delivery with automatic format and compression
+  let optPrefix = prefix;
+  if (prefix === '/image/upload' && !normalized.toLowerCase().endsWith('.pdf')) {
+    optPrefix = '/image/upload/f_auto,q_auto';
+  }
+
+  return `${cloudBase}${optPrefix}/${rootPath}${normalized}`;
 }
 
 export const buildCloudinaryMediaUrl = toFullMediaUrl;

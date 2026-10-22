@@ -40,29 +40,6 @@ function generatePublicId(prefix) {
   return `${prefix}-${timestamp}-${random}`;
 }
 
-const initialSampleNews = [
-  {
-    publicId: generatePublicId('NEW'),
-    title: 'Admissions Open for Academic Session 2026–27',
-    redirectUrl: '/admissions/policy',
-    isPublished: true,
-    createdAt: new Date(),
-  },
-  {
-    publicId: generatePublicId('NEW') + '-2',
-    title: 'Annual Sports Meet & Athletic Championship Concluded with Grandeur',
-    redirectUrl: '/gallery-album',
-    isPublished: true,
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-  },
-  {
-    publicId: generatePublicId('NEW') + '-3',
-    title: 'Outstanding Performance by IPS Students in CBSE Board Examinations',
-    redirectUrl: '/about',
-    isPublished: true,
-    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-  },
-];
 
 const initialSampleReviews = [
   {
@@ -199,13 +176,6 @@ async function main() {
   await menuCol.insertMany(menuDocsToInsert);
   console.log(`[db:seed] Seeded ${menuDocsToInsert.length} Menu Items with 3-level hierarchy.`);
 
-  // 5. Seed sample News if collection is empty
-  const newsCol = database.collection('news');
-  const newsCount = await newsCol.countDocuments({});
-  if (newsCount === 0) {
-    await newsCol.insertMany(initialSampleNews);
-    console.log(`[db:seed] Seeded ${initialSampleNews.length} initial news announcements.`);
-  }
 
   // 6. Seed sample Reviews if collection is empty
   const reviewsCol = database.collection('reviews');

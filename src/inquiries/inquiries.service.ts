@@ -21,9 +21,11 @@ export class InquiriesService {
   async create(createInquiryDto: CreateInquiryDto) {
     const createdInquiry: any = await this.inquiryRepository.create(createInquiryDto);
 
+    const generatedId = createdInquiry.publicId || (createdInquiry._id ? createdInquiry._id.toString() : '');
+
     // Emit event for notification service
     this.eventEmitter.emit('inquiry.created', {
-      inquiryId: createdInquiry._id ? createdInquiry._id.toString() : createdInquiry.publicId,
+      inquiryId: generatedId,
       name: createdInquiry.name,
       email: createdInquiry.email,
       contact: createdInquiry.contact,
@@ -66,9 +68,16 @@ export class InquiriesService {
     const isObjectId = /^[0-9a-fA-F]{24}$/.test(cleanQuery);
 
     const additionalFilter: Record<string, any> = isObjectId
-      ? { _id: cleanQuery }
+      ? {
+          $or: [
+            { _id: cleanQuery },
+            { publicId: cleanQuery },
+          ],
+        }
       : {
           $or: [
+            { publicId: cleanQuery },
+            { publicId: { $regex: new RegExp(cleanQuery, 'i') } },
             { email: { $regex: new RegExp(cleanQuery, 'i') } },
             { contact: { $regex: new RegExp(cleanQuery.replace(/[^0-9+]/g, ''), 'i') } },
             { name: { $regex: new RegExp(cleanQuery, 'i') } },
