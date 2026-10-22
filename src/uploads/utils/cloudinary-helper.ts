@@ -42,11 +42,15 @@ export function extractCloudinaryPublicId(url: string): string | null {
 export function formatBytes(bytes: number, decimals: number = 2): string {
   if (!bytes || isNaN(bytes) || bytes <= 0) return '0 MB';
 
-  const mb = bytes / (1024 * 1024);
+  const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
-  const num = parseFloat(mb.toFixed(dm));
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
 
-  return `${num} MB`;
+  if (i <= 0) return `${bytes} Bytes`;
+  if (i === 1) return `${parseFloat((bytes / k).toFixed(dm))} KB`;
+
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
 /**

@@ -81,6 +81,12 @@ export class UploadsController {
     return this.uploadsService.getCloudinaryResources(folder);
   }
 
+  @Get('storage')
+  @ApiOperation({ summary: 'Get Cloudinary storage usage, plan, remaining limits, credits, and metrics' })
+  getStorageUsage() {
+    return this.uploadsService.getStorageUsage();
+  }
+
   @Get()
   @ApiOperation({ summary: 'List uploaded assets with pagination, search, and filtering' })
   @ApiQuery({ name: 'eventType', required: false, type: String, description: 'Filter gallery assets by event type' })

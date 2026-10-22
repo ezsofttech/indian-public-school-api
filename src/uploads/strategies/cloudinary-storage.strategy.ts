@@ -367,4 +367,35 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       return [];
     }
   }
+
+  async getUsage(): Promise<any> {
+    const cacheKey = '__CLOUDINARY_USAGE__';
+    const cached = this.cache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && (now - cached.timestamp < this.CACHE_TTL_MS)) {
+      return cached.data;
+    }
+
+    if (now < this.rateLimitUntil && cached) {
+      return cached.data;
+    }
+
+    try {
+      const usage = await cloudinary.api.usage();
+      this.cache.set(cacheKey, { timestamp: now, data: usage });
+      return usage;
+    } catch (err: any) {
+      const isRateLimit = this.isRateLimitError(err);
+      if (isRateLimit) {
+        this.rateLimitUntil = now + 10 * 60 * 1000;
+        this.logger.warn(`Cloudinary usage rate limit hit. Falling back to cached usage.`);
+      } else {
+        const errorDetail = err?.error?.message || err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+        this.logger.warn(`Failed to fetch Cloudinary usage via Admin API: ${errorDetail}`);
+      }
+      return cached ? cached.data : null;
+    }
+  }
 }
+
