@@ -79,7 +79,12 @@ export function toRelativeMediaPath(pathOrUrl: unknown, configService?: ConfigSe
       path = path.slice(cloudBase.length);
     } else {
       const match = path.match(/^https?:\/\/res\.cloudinary\.com\/[^/]+(\/.*)$/i);
-      if (match?.[1]) path = match[1];
+      if (match?.[1]) {
+        path = match[1];
+      } else {
+        // External link (e.g. https://www.cbse.gov.in) -> preserve untouched!
+        return path;
+      }
     }
   }
 
@@ -227,6 +232,9 @@ const MEDIA_PROPERTY_KEYS = new Set([
   'imageUrl', 'photo', 'logo', 'banner', 'attachment', 'attachmentUrl',
   'resume', 'file', 'heroImage', 'thumbnail', 'coverImage', 'mediaUrl', 'icon', 'src',
 ]);
+const LINK_PROPERTY_KEYS = new Set([
+  'linkUrl', 'targetUrl', 'redirectUrl', 'href', 'url', 'actionUrl', 'externalUrl', 'destinationUrl',
+]);
 
 /**
  * Recursively strip prefixes from full media URLs to relative paths (for Request processing).
@@ -242,6 +250,14 @@ export function transformMediaUrlsToRelative<T>(
 
   if (typeof obj === 'string') {
     const trimmed = obj.trim();
+
+    // Preserve navigation and action link destinations untouched
+    if (parentKey && LINK_PROPERTY_KEYS.has(parentKey)) {
+      if (!trimmed.includes('res.cloudinary.com')) {
+        return trimmed as unknown as T;
+      }
+    }
+
     if (PAGE_ROUTE_PATTERNS.test(trimmed) && !MEDIA_FILE_EXTENSIONS.test(trimmed)) {
       return trimmed as unknown as T;
     }
@@ -291,7 +307,13 @@ export function transformMediaPathsToFull<T>(
 
     const trimmed = obj.trim();
 
-    // Do NOT transform page navigation routes into Cloudinary image URLs
+    // Do NOT transform page navigation routes or action links into Cloudinary image URLs
+    if (parentKey && LINK_PROPERTY_KEYS.has(parentKey)) {
+      if (!trimmed.includes('res.cloudinary.com') && !trimmed.startsWith('/Settings/') && !trimmed.startsWith('/assets/Settings/')) {
+        return trimmed as unknown as T;
+      }
+    }
+
     if (PAGE_ROUTE_PATTERNS.test(trimmed) && !MEDIA_FILE_EXTENSIONS.test(trimmed)) {
       return trimmed as unknown as T;
     }

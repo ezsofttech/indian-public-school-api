@@ -54,15 +54,35 @@ export class SchoolSettingsService implements OnModuleInit {
   async create(dto: CreateSchoolSettingDto) {
     try {
       await this.cacheManager.del('site_datasource');
+      await this.cacheManager.del('site_datasource_key');
+      await this.cacheManager.del('active_school_setting');
+      if (dto.key) {
+        await this.cacheManager.del(`setting_key_${dto.key}`);
+      }
     } catch {
       // ignore
     }
     const status = dto.status || 'Active';
     const existing = await this.schoolSettingRepository.findByKey(dto.key);
+    let result: any;
     if (existing) {
-      return this.schoolSettingRepository.update(existing._id.toString(), { ...dto, status });
+      result = await this.schoolSettingRepository.update(existing._id.toString(), { ...dto, status });
+    } else {
+      result = await this.schoolSettingRepository.create({ ...dto, status });
     }
-    return this.schoolSettingRepository.create({ ...dto, status });
+
+    try {
+      await this.cacheManager.del('site_datasource');
+      await this.cacheManager.del('site_datasource_key');
+      await this.cacheManager.del('active_school_setting');
+      if (dto.key) {
+        await this.cacheManager.del(`setting_key_${dto.key}`);
+      }
+    } catch {
+      // ignore
+    }
+
+    return result;
   }
 
   async findAll(queryDto: PaginationQueryDto = {}, category?: string, status?: string) {
