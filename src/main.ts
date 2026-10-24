@@ -78,6 +78,8 @@ async function bootstrap() {
     customSiteTitle: 'IPS API Documentation',
   });
 
+  // Browsers request this automatically; keep it out of the API 404 handler.
+  app.use('/favicon.ico', (_req, res) => res.status(204).end());
   app.useStaticAssets(join(process.cwd(), 'public'));
 
   const port = process.env.PORT || 5000;

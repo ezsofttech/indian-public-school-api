@@ -82,6 +82,27 @@ describe('MediaConfig', () => {
         },
       });
     });
+
+    it('should preserve external non-media URLs and linkUrl properties untouched', () => {
+      const payload = {
+        title: 'CBSE Affiliated School',
+        linkUrl: 'https://www.cbse.gov.in',
+        targetUrl: '/mandatory-disclosure',
+        nested: {
+          externalUrl: 'https://www.vidyalayaschoolsoftware.com',
+        },
+      };
+
+      const result = transformMediaUrlsToRelative(payload);
+      expect(result).toEqual({
+        title: 'CBSE Affiliated School',
+        linkUrl: 'https://www.cbse.gov.in',
+        targetUrl: '/mandatory-disclosure',
+        nested: {
+          externalUrl: 'https://www.vidyalayaschoolsoftware.com',
+        },
+      });
+    });
   });
 
   describe('transformMediaPathsToFull', () => {
