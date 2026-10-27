@@ -10,146 +10,6 @@ import {
 } from './interfaces/youtube.interface';
 import { YouTubeQueryDto } from './dto/youtube-query.dto';
 
-// Built-in seed data for @ipssbp channel to guarantee high availability even during offline or zero-quota periods
-const SEED_CHANNEL: YouTubeChannelInfo = {
-  channelId: 'UCLnjAG02fRWXCTM3ZFM_o9A',
-  handle: '@ipssbp',
-  title: 'Indian Public School, Sambalpur',
-  description:
-    '🎓 Odisha’s No. 1 CBSE School | Times Business Award 2026 🏫 Estd. 02 April 2009 | Nursery–XII',
-  customUrl: '@ipssbp',
-  url: 'https://www.youtube.com/@ipssbp',
-  avatarUrl:
-    'https://yt3.ggpht.com/BoeOoXCMyqnMvvrv8C-pYMbNVDzWqIss-vGlfVpMVaqB6orbzTQfZ8utoJTvY8h4m9tJezQW=s800-c-k-c0x00ffffff-no-rj',
-  subscriberCount: '755+',
-  videoCount: '91',
-  viewCount: '96500+',
-  publishedAt: '2013-05-26T10:07:10Z',
-};
-
-const SEED_VIDEOS: YouTubeVideoItem[] = [
-  {
-    id: 'z-AJiDOVNvU',
-    title: '✨🌺 𝐆𝐥𝐢𝐦𝐩𝐬𝐞𝐬 𝐨𝐟 𝐍𝐚𝐯𝐫𝐚𝐭𝐫𝐢 𝐂𝐞𝐥𝐞𝐛𝐫𝐚𝐭𝐢𝐨𝐧𝐬 𝐚𝐭 𝐈𝐧𝐝𝐢𝐚𝐧 𝐏𝐮𝐛𝐥𝐢𝐜 𝐒𝐜𝐡𝐨𝐨𝐥, 𝐒𝐚𝐦𝐛𝐚𝐥𝐩𝐮𝐫! 🌺✨',
-    eventName: '✨🌺 𝐆𝐥𝐢𝐦𝐩𝐬𝐞𝐬 𝐨𝐟 𝐍𝐚𝐯𝐫𝐚𝐭𝐫𝐢 𝐂𝐞𝐥𝐞𝐛𝐫𝐚𝐭𝐢𝐨𝐧𝐬 𝐚𝐭 𝐈𝐧𝐝𝐢𝐚𝐧 𝐏𝐮𝐛𝐥𝐢𝐜 𝐒𝐜𝐡𝐨𝐨𝐥, 𝐒𝐚𝐦𝐛𝐚𝐥𝐩𝐮𝐫! 🌺✨',
-    description: 'Joyful highlights and vibrant cultural performances by our students during Navratri celebrations.',
-    src: 'https://www.youtube.com/watch?v=z-AJiDOVNvU',
-    url: 'https://www.youtube.com/watch?v=z-AJiDOVNvU',
-    fileUrl: ['https://www.youtube.com/watch?v=z-AJiDOVNvU'],
-    embedUrl: 'https://www.youtube.com/embed/z-AJiDOVNvU',
-    poster: 'https://i.ytimg.com/vi/z-AJiDOVNvU/hqdefault.jpg',
-    posterUrl: 'https://i.ytimg.com/vi/z-AJiDOVNvU/hqdefault.jpg',
-    thumbnail: 'https://i.ytimg.com/vi/z-AJiDOVNvU/hqdefault.jpg',
-    category: 'Events & Celebrations',
-    directory: '/album/videos',
-    date: '2026-10-16T06:15:58Z',
-    publishedAt: '2026-10-16T06:15:58Z',
-    duration: '1:27',
-    views: '85',
-    channelTitle: 'Indian Public School, Sambalpur',
-    channelId: 'UCLnjAG02fRWXCTM3ZFM_o9A',
-    source: 'youtube',
-    isYouTube: true,
-    isFeatured: true,
-  },
-  {
-    id: 'Czb0Gp7VZpU',
-    title: 'Indian Public School, Sambalpur - Campus Highlights',
-    eventName: 'Indian Public School, Sambalpur - Campus Highlights',
-    description: 'A glimpse of the scenic campus, smart classrooms, and infrastructure at Indian Public School.',
-    src: 'https://www.youtube.com/watch?v=Czb0Gp7VZpU',
-    url: 'https://www.youtube.com/watch?v=Czb0Gp7VZpU',
-    fileUrl: ['https://www.youtube.com/watch?v=Czb0Gp7VZpU'],
-    embedUrl: 'https://www.youtube.com/embed/Czb0Gp7VZpU',
-    poster: 'https://i.ytimg.com/vi/Czb0Gp7VZpU/hqdefault.jpg',
-    posterUrl: 'https://i.ytimg.com/vi/Czb0Gp7VZpU/hqdefault.jpg',
-    thumbnail: 'https://i.ytimg.com/vi/Czb0Gp7VZpU/hqdefault.jpg',
-    category: 'Campus & Tour',
-    directory: '/album/videos',
-    date: '2026-09-22T14:49:24Z',
-    publishedAt: '2026-09-22T14:49:24Z',
-    duration: '0:32',
-    views: '38',
-    channelTitle: 'Indian Public School, Sambalpur',
-    channelId: 'UCLnjAG02fRWXCTM3ZFM_o9A',
-    source: 'youtube',
-    isYouTube: true,
-    isFeatured: false,
-  },
-  {
-    id: 'zNXmtf5vsms',
-    title: '🌾 NUAKHAI CELEBRATION BY OUR LITTLE ONES 🌾',
-    eventName: '🌾 NUAKHAI CELEBRATION BY OUR LITTLE ONES 🌾',
-    description: 'Little children celebrating the agrarian festival Nuakhai with traditional fervor and joy.',
-    src: 'https://www.youtube.com/watch?v=zNXmtf5vsms',
-    url: 'https://www.youtube.com/watch?v=zNXmtf5vsms',
-    fileUrl: ['https://www.youtube.com/watch?v=zNXmtf5vsms'],
-    embedUrl: 'https://www.youtube.com/embed/zNXmtf5vsms',
-    poster: 'https://i.ytimg.com/vi/zNXmtf5vsms/hqdefault.jpg',
-    posterUrl: 'https://i.ytimg.com/vi/zNXmtf5vsms/hqdefault.jpg',
-    thumbnail: 'https://i.ytimg.com/vi/zNXmtf5vsms/hqdefault.jpg',
-    category: 'Events & Celebrations',
-    directory: '/album/videos',
-    date: '2026-09-13T12:28:28Z',
-    publishedAt: '2026-09-13T12:28:28Z',
-    duration: '0:48',
-    views: '79',
-    channelTitle: 'Indian Public School, Sambalpur',
-    channelId: 'UCLnjAG02fRWXCTM3ZFM_o9A',
-    source: 'youtube',
-    isYouTube: true,
-    isFeatured: false,
-  },
-  {
-    id: 'NU-Jj5oJxxU',
-    title: '🎨✨ LITTLE HANDS, BIG IMAGINATIONS! 👐🌈',
-    eventName: '🎨✨ LITTLE HANDS, BIG IMAGINATIONS! 👐🌈',
-    description: 'Creative arts, crafts and imaginative activities by pre-primary and primary students.',
-    src: 'https://www.youtube.com/watch?v=NU-Jj5oJxxU',
-    url: 'https://www.youtube.com/watch?v=NU-Jj5oJxxU',
-    fileUrl: ['https://www.youtube.com/watch?v=NU-Jj5oJxxU'],
-    embedUrl: 'https://www.youtube.com/embed/NU-Jj5oJxxU',
-    poster: 'https://i.ytimg.com/vi/NU-Jj5oJxxU/hqdefault.jpg',
-    posterUrl: 'https://i.ytimg.com/vi/NU-Jj5oJxxU/hqdefault.jpg',
-    thumbnail: 'https://i.ytimg.com/vi/NU-Jj5oJxxU/hqdefault.jpg',
-    category: 'Sports & Activities',
-    directory: '/album/videos',
-    date: '2026-09-13T02:51:32Z',
-    publishedAt: '2026-09-13T02:51:32Z',
-    duration: '0:55',
-    views: '64',
-    channelTitle: 'Indian Public School, Sambalpur',
-    channelId: 'UCLnjAG02fRWXCTM3ZFM_o9A',
-    source: 'youtube',
-    isYouTube: true,
-    isFeatured: false,
-  },
-  {
-    id: 'CCt99Xyna8U',
-    title: '🇮🇳✨ Celebrating the Spirit of Freedom! ✨🇮🇳',
-    eventName: '🇮🇳✨ Celebrating the Spirit of Freedom! ✨🇮🇳',
-    description: 'Independence Day celebration and national anthem performance by students.',
-    src: 'https://www.youtube.com/watch?v=CCt99Xyna8U',
-    url: 'https://www.youtube.com/watch?v=CCt99Xyna8U',
-    fileUrl: ['https://www.youtube.com/watch?v=CCt99Xyna8U'],
-    embedUrl: 'https://www.youtube.com/embed/CCt99Xyna8U',
-    poster: 'https://i.ytimg.com/vi/CCt99Xyna8U/hqdefault.jpg',
-    posterUrl: 'https://i.ytimg.com/vi/CCt99Xyna8U/hqdefault.jpg',
-    thumbnail: 'https://i.ytimg.com/vi/CCt99Xyna8U/hqdefault.jpg',
-    category: 'Events & Celebrations',
-    directory: '/album/videos',
-    date: '2026-08-16T18:04:37Z',
-    publishedAt: '2026-08-16T18:04:37Z',
-    duration: '1:10',
-    views: '112',
-    channelTitle: 'Indian Public School, Sambalpur',
-    channelId: 'UCLnjAG02fRWXCTM3ZFM_o9A',
-    source: 'youtube',
-    isYouTube: true,
-    isFeatured: false,
-  },
-];
-
 @Injectable()
 export class YouTubeService {
   private readonly logger = new Logger(YouTubeService.name);
@@ -162,29 +22,29 @@ export class YouTubeService {
     @Optional()
     @Inject(CACHE_MANAGER)
     private readonly cacheManager?: Cache,
-  ) {}
+  ) { }
 
   private get channelHandle(): string {
     return (
-      this.configService.get<string>('YOUTUBE_CHANNEL_HANDLE') ||
-      process.env.YOUTUBE_CHANNEL_HANDLE ||
-      '@ipssbp'
+      this.configService.get<string>('YOUTUBE_CHANNEL_HANDLE')?.trim() ||
+      process.env.YOUTUBE_CHANNEL_HANDLE?.trim() ||
+      ''
     );
   }
 
   private get channelId(): string {
     return (
-      this.configService.get<string>('YOUTUBE_CHANNEL_ID') ||
-      process.env.YOUTUBE_CHANNEL_ID ||
-      'UCLnjAG02fRWXCTM3ZFM_o9A'
+      this.configService.get<string>('YOUTUBE_CHANNEL_ID')?.trim() ||
+      process.env.YOUTUBE_CHANNEL_ID?.trim() ||
+      ''
     );
   }
 
   private get apiKey(): string | undefined {
     return (
-      this.configService.get<string>('YOUTUBE_API_KEY') ||
-      process.env.YOUTUBE_API_KEY ||
-      'AIzaSyB0BNv1N1WTnoj2Wp4gBlTsGJtHbFsriGs'
+      this.configService.get<string>('YOUTUBE_API_KEY')?.trim() ||
+      process.env.YOUTUBE_API_KEY?.trim() ||
+      undefined
     );
   }
 
@@ -257,7 +117,7 @@ export class YouTubeService {
       if (!id) continue;
 
       const rawTitle = this.pickTag(entry, 'title');
-      const title = this.decodeXmlEntities(rawTitle || `Campus Video ${idx + 1}`);
+      const title = this.decodeXmlEntities(rawTitle || 'Video');
       const rawDesc =
         this.pickTag(entry, 'media:description') || this.pickTag(entry, 'summary');
       const description = this.decodeXmlEntities(rawDesc);
@@ -265,6 +125,8 @@ export class YouTubeService {
       const thumbnail =
         this.pickAttr(entry, 'media:thumbnail', 'url') ||
         `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+      const authorTitle =
+        this.pickTag(entry, 'name') || this.pickTag(xml, 'title') || this.channelHandle || '';
 
       results.push({
         id,
@@ -284,7 +146,7 @@ export class YouTubeService {
         publishedAt,
         duration: '1:00',
         views: '100+',
-        channelTitle: 'Indian Public School, Sambalpur',
+        channelTitle: authorTitle,
         channelId: this.channelId,
         source: 'youtube',
         isYouTube: true,
@@ -392,13 +254,15 @@ export class YouTubeService {
 
   // ---------------- Channel Info ----------------
   async getChannelInfo(): Promise<YouTubeChannelInfo> {
-    const cacheKey = `yt_channel_${this.channelId}`;
+    const channelId = this.channelId;
+    const channelHandle = this.channelHandle;
+    const cacheKey = `yt_channel_${channelId || channelHandle}`;
     const cached = await this.getCached<YouTubeChannelInfo>(cacheKey);
     if (cached) return cached;
 
-    if (this.apiKey && this.channelId) {
+    if (this.apiKey && channelId) {
       try {
-        const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails,statistics,brandingSettings&id=${this.channelId}&key=${this.apiKey}`;
+        const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails,statistics,brandingSettings&id=${channelId}&key=${this.apiKey}`;
         const res = await fetch(url);
         if (res.ok) {
           const json = await res.json();
@@ -410,20 +274,20 @@ export class YouTubeService {
               snippet.thumbnails?.high?.url ||
               snippet.thumbnails?.medium?.url ||
               snippet.thumbnails?.default?.url ||
-              SEED_CHANNEL.avatarUrl;
+              '';
 
             const channelInfo: YouTubeChannelInfo = {
-              channelId: item.id || this.channelId,
-              handle: snippet.customUrl || this.channelHandle,
-              title: (snippet.title || SEED_CHANNEL.title).trim(),
-              description: snippet.description || SEED_CHANNEL.description,
-              customUrl: snippet.customUrl || this.channelHandle,
-              url: `https://www.youtube.com/${snippet.customUrl || this.channelHandle}`,
+              channelId: item.id || channelId,
+              handle: snippet.customUrl || channelHandle,
+              title: (snippet.title || channelHandle || '').trim(),
+              description: snippet.description || '',
+              customUrl: snippet.customUrl || channelHandle,
+              url: `https://www.youtube.com/${snippet.customUrl || channelHandle}`,
               avatarUrl: thumb,
-              subscriberCount: stats.subscriberCount || SEED_CHANNEL.subscriberCount,
-              videoCount: stats.videoCount || SEED_CHANNEL.videoCount,
-              viewCount: stats.viewCount || SEED_CHANNEL.viewCount,
-              publishedAt: snippet.publishedAt || SEED_CHANNEL.publishedAt,
+              subscriberCount: stats.subscriberCount || '0',
+              videoCount: stats.videoCount || '0',
+              viewCount: stats.viewCount || '0',
+              publishedAt: snippet.publishedAt || new Date().toISOString(),
             };
 
             await this.setCached(cacheKey, channelInfo, 3600); // 1 hour
@@ -437,7 +301,22 @@ export class YouTubeService {
       }
     }
 
-    return SEED_CHANNEL;
+    const fallbackInfo: YouTubeChannelInfo = {
+      channelId,
+      handle: channelHandle,
+      title: channelHandle || '',
+      description: '',
+      customUrl: channelHandle,
+      url: channelHandle
+        ? `https://www.youtube.com/${channelHandle.startsWith('@') ? channelHandle : '@' + channelHandle}`
+        : '',
+      avatarUrl: '',
+      subscriberCount: '0',
+      videoCount: '0',
+      viewCount: '0',
+      publishedAt: new Date().toISOString(),
+    };
+    return fallbackInfo;
   }
 
   // ---------------- Fetch All Channel Videos (Cached) ----------------
@@ -529,7 +408,7 @@ export class YouTubeService {
               snippet.thumbnails?.default?.url ||
               `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
 
-            const title = this.decodeXmlEntities((snippet.title || `Campus Video ${idx + 1}`).trim());
+            const title = this.decodeXmlEntities((snippet.title || `Video ${idx + 1}`).trim());
             const desc = this.decodeXmlEntities(snippet.description || '');
             const category = this.categorizeVideo(title, desc);
 
@@ -559,7 +438,7 @@ export class YouTubeService {
               duration: details?.duration || '1:15',
               views: details?.views || '100+',
               likeCount: details?.likes,
-              channelTitle: snippet.channelTitle || 'Indian Public School, Sambalpur',
+              channelTitle: snippet.channelTitle || this.channelHandle || '',
               channelId: snippet.channelId || this.channelId,
               source: 'youtube' as const,
               isYouTube: true as const,
@@ -613,7 +492,7 @@ export class YouTubeService {
               const title =
                 vRenderer.title?.runs?.[0]?.text ||
                 vRenderer.title?.simpleText ||
-                'Campus Video';
+                'Video';
               const duration =
                 vRenderer.lengthText?.simpleText ||
                 vRenderer.lengthText?.runs?.[0]?.text ||
@@ -649,7 +528,7 @@ export class YouTubeService {
                 publishedAt: publishedText,
                 duration,
                 views: viewCountText,
-                channelTitle: 'Indian Public School, Sambalpur',
+                channelTitle: vRenderer.ownerText?.runs?.[0]?.text || this.channelHandle || '',
                 channelId: this.channelId,
                 source: 'youtube',
                 isYouTube: true,
@@ -668,8 +547,7 @@ export class YouTubeService {
       this.logger.warn(`Failed fallback channel scraping: ${scrapedErr.message}`);
     }
 
-    // 3. Guaranteed Seed Fallback
-    return SEED_VIDEOS;
+    return [];
   }
 
   // ---------------- Public Query API ----------------
@@ -757,7 +635,7 @@ export class YouTubeService {
               snippet.thumbnails?.maxres?.url ||
               snippet.thumbnails?.high?.url ||
               `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg`;
-            const title = (snippet.title || 'Campus Video').trim();
+            const title = (snippet.title || 'Video').trim();
             const desc = snippet.description || '';
 
             return {
@@ -779,7 +657,7 @@ export class YouTubeService {
               duration: this.formatDuration(item.contentDetails?.duration),
               views: item.statistics?.viewCount || '100+',
               likeCount: item.statistics?.likeCount,
-              channelTitle: snippet.channelTitle || 'Indian Public School, Sambalpur',
+              channelTitle: snippet.channelTitle || this.channelHandle || '',
               channelId: snippet.channelId || this.channelId,
               source: 'youtube',
               isYouTube: true,
