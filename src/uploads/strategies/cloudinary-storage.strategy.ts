@@ -175,8 +175,26 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       } catch (err: any) {
         const errMsg = err?.message || err?.error?.message || String(err);
         this.logger.warn(
-          `Cloudinary 'image' upload failed for PDF ${file.originalname} (${errMsg}). Retrying with 'auto'...`,
+          `Cloudinary 'image' upload failed for PDF ${file.originalname} (${errMsg}).`,
         );
+
+        // If the file was compressed and failed as 'image', retry 'image' with the original uncompressed buffer
+        const origBuf = (file as any)?.originalBuffer;
+        if (origBuf && Buffer.isBuffer(origBuf) && origBuf.length > 0 && origBuf !== file.buffer) {
+          try {
+            this.logger.warn(
+              `Retrying 'image' upload for PDF ${file.originalname} with original uncompressed buffer...`,
+            );
+            file.buffer = origBuf;
+            file.size = origBuf.length;
+            return await doUploadWithRetry('image', 1);
+          } catch (retryErr: any) {
+            this.logger.warn(
+              `Fallback 'image' upload with original buffer also failed: ${retryErr?.message || retryErr}`,
+            );
+          }
+        }
+
         await new Promise((res) => setTimeout(res, 1000));
         try {
           return await doUploadWithRetry('auto', 1);

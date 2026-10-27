@@ -50,7 +50,8 @@ export class FileCompressorService {
           ...file,
           buffer: compressedBuffer,
           size: compressedBuffer.length,
-        };
+          originalBuffer: file.buffer,
+        } as Express.Multer.File & { originalBuffer?: Buffer };
       }
 
       this.logger.log(
@@ -110,15 +111,21 @@ export class FileCompressorService {
   }
 
   /**
-   * PDF document optimization using pdf-lib (object stream packing & metadata cleanup)
+   * PDF document optimization using pdf-lib.
+   * Compresses object streams for maximum size reduction on standard PDFs (Google Docs, MS Word, Adobe Acrobat),
+   * while adaptively falling back to standard xref packing for generator signatures (e.g. ReportLab)
+   * that require uncompressed object streams for Cloudinary rasterization.
    */
   private async compressPdf(buffer: Buffer, filename: string): Promise<Buffer> {
     try {
+      const headerSnippet = buffer.toString('latin1', 0, 4096);
+      const isReportLab = headerSnippet.includes('ReportLab');
       const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
 
-      // Save PDF with compressed object streams enabled
+      // Apply maximum compression (useObjectStreams: true) for compatible PDFs,
+      // and standard xref packing for ReportLab to prevent Cloudinary 'Invalid PDF file' errors
       const compressedBytes = await pdfDoc.save({
-        useObjectStreams: true,
+        useObjectStreams: !isReportLab,
         addDefaultPage: false,
       });
 
