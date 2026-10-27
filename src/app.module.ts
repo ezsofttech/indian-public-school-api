@@ -22,6 +22,7 @@ import { PublicDisclosureModule } from './public-disclosure/public-disclosure.mo
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { CacheModule } from '@nestjs/cache-manager';
 import { NotificationsModule } from './notifications/notifications.module';
+import { YouTubeModule } from './youtube/youtube.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ThemeModule,
     PublicDisclosureModule,
     NotificationsModule,
+    YouTubeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
