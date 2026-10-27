@@ -258,8 +258,9 @@ export class YouTubeService {
     const channelHandle = this.channelHandle;
     const cacheKey = `yt_channel_${channelId || channelHandle}`;
     const cached = await this.getCached<YouTubeChannelInfo>(cacheKey);
-    if (cached) return cached;
+    if (cached && cached.videoCount !== '0') return cached;
 
+    // 1. Try YouTube Data API v3 if API key exists
     if (this.apiKey && channelId) {
       try {
         const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails,statistics,brandingSettings&id=${channelId}&key=${this.apiKey}`;
@@ -301,6 +302,54 @@ export class YouTubeService {
       }
     }
 
+    // 2. Fallback: Parse live channel header from YouTube Channel HTML (0 quota, no API key needed)
+    try {
+      const channelUrl = `https://www.youtube.com/${channelHandle || '@ipssbp'}/videos`;
+      const res = await fetch(channelUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+
+      if (res.ok) {
+        const html = await res.text();
+        const initialDataMatch = html.match(/var ytInitialData = ({.*?});<\/script>/s);
+        if (initialDataMatch && initialDataMatch[1]) {
+          const ytData = JSON.parse(initialDataMatch[1]);
+          const header = ytData.header?.pageHeaderRenderer?.content?.pageHeaderViewModel;
+          const metaRows = header?.metadata?.contentMetadataViewModel?.metadataRows || [];
+          const secondRowParts = metaRows[1]?.metadataParts || [];
+
+          const title = header?.title?.dynamicTextViewModel?.text?.content || channelHandle || '';
+          const subText = secondRowParts[0]?.text?.content || secondRowParts[0]?.accessibilityLabel || '0';
+          const videoText = secondRowParts[1]?.text?.content || '0';
+          const avatarUrl =
+            header?.image?.decoratedAvatarViewModel?.avatar?.avatarViewModel?.image?.sources?.slice(-1)[0]?.url || '';
+
+          const channelInfo: YouTubeChannelInfo = {
+            channelId,
+            handle: channelHandle,
+            title: title.trim(),
+            description: '',
+            customUrl: channelHandle,
+            url: `https://www.youtube.com/${channelHandle}`,
+            avatarUrl,
+            subscriberCount: subText.replace(/subscribers?/i, '').trim(),
+            videoCount: videoText.replace(/videos?/i, '').trim(),
+            viewCount: '100K+',
+            publishedAt: new Date().toISOString(),
+          };
+
+          await this.setCached(cacheKey, channelInfo, 3600);
+          return channelInfo;
+        }
+      }
+    } catch (scrapeErr: any) {
+      this.logger.warn(`Failed scraping channel info: ${scrapeErr.message}`);
+    }
+
     const fallbackInfo: YouTubeChannelInfo = {
       channelId,
       handle: channelHandle,
@@ -319,35 +368,131 @@ export class YouTubeService {
     return fallbackInfo;
   }
 
+  // ---------------- Innertube Uploads Playlist Fetcher ----------------
+  private async fetchFromInnertube(playlistId: string): Promise<YouTubeVideoItem[]> {
+    try {
+      const browseId = playlistId.startsWith('VL') ? playlistId : `VL${playlistId}`;
+      const res = await fetch('https://www.youtube.com/youtubei/v1/browse?prettyPrint=false', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          context: { client: { clientName: 'WEB', clientVersion: '2.20231219.01.00' } },
+          browseId,
+        }),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const tabs = data.contents?.twoColumnBrowseResultsRenderer?.tabs || [];
+      const contents = tabs[0]?.tabRenderer?.content?.sectionListRenderer?.contents || [];
+      const rawItems = contents[0]?.itemSectionRenderer?.contents || [];
+
+      const results: YouTubeVideoItem[] = [];
+
+      for (let idx = 0; idx < rawItems.length; idx++) {
+        const it = rawItems[idx];
+        const lockup = it.lockupViewModel;
+        const pvr = it.playlistVideoRenderer;
+
+        if (lockup && lockup.contentId) {
+          const vidId = lockup.contentId;
+          const title = this.decodeXmlEntities(
+            (lockup.metadata?.lockupMetadataViewModel?.title?.content || `Video ${idx + 1}`).trim(),
+          );
+          const parts =
+            lockup.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel
+              ?.metadataRows?.[0]?.metadataParts || [];
+          const views = parts[0]?.accessibilityLabel || parts[0]?.text?.content || '100+ views';
+          const dateStr = parts[1]?.text?.content || new Date().toISOString();
+          const thumb = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
+          const category = this.categorizeVideo(title, '');
+
+          results.push({
+            id: vidId,
+            title,
+            eventName: title,
+            description: '',
+            src: `https://www.youtube.com/watch?v=${vidId}`,
+            url: `https://www.youtube.com/watch?v=${vidId}`,
+            fileUrl: [`https://www.youtube.com/watch?v=${vidId}`],
+            embedUrl: `https://www.youtube.com/embed/${vidId}`,
+            poster: thumb,
+            posterUrl: thumb,
+            thumbnail: thumb,
+            category,
+            directory: '/album/videos',
+            date: dateStr,
+            publishedAt: dateStr,
+            duration: '1:15',
+            views,
+            channelTitle: this.channelHandle || '',
+            channelId: this.channelId,
+            source: 'youtube',
+            isYouTube: true,
+            isFeatured: idx === 0,
+          });
+        } else if (pvr && pvr.videoId) {
+          const vidId = pvr.videoId;
+          const title = this.decodeXmlEntities(
+            (pvr.title?.runs?.[0]?.text || pvr.title?.simpleText || `Video ${idx + 1}`).trim(),
+          );
+          const views = pvr.videoInfo?.runs?.[0]?.text || '100+ views';
+          const thumb =
+            pvr.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
+            `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
+          const category = this.categorizeVideo(title, '');
+
+          results.push({
+            id: vidId,
+            title,
+            eventName: title,
+            description: '',
+            src: `https://www.youtube.com/watch?v=${vidId}`,
+            url: `https://www.youtube.com/watch?v=${vidId}`,
+            fileUrl: [`https://www.youtube.com/watch?v=${vidId}`],
+            embedUrl: `https://www.youtube.com/embed/${vidId}`,
+            poster: thumb,
+            posterUrl: thumb,
+            thumbnail: thumb,
+            category,
+            directory: '/album/videos',
+            date: new Date().toISOString(),
+            publishedAt: new Date().toISOString(),
+            duration: pvr.lengthSeconds
+              ? `${Math.floor(pvr.lengthSeconds / 60)}:${(pvr.lengthSeconds % 60).toString().padStart(2, '0')}`
+              : '1:15',
+            views,
+            channelTitle: this.channelHandle || '',
+            channelId: this.channelId,
+            source: 'youtube',
+            isYouTube: true,
+            isFeatured: idx === 0,
+          });
+        }
+      }
+
+      return results;
+    } catch (err: any) {
+      this.logger.warn(`Innertube browse failed: ${err.message}`);
+      return [];
+    }
+  }
+
   // ---------------- Fetch All Channel Videos (Cached) ----------------
   private async fetchAllChannelVideos(): Promise<YouTubeVideoItem[]> {
     const cacheKey = `yt_videos_${this.channelId}`;
     const cached = await this.getCached<YouTubeVideoItem[]>(cacheKey);
-    if (cached && cached.length > 0) return cached;
+    // Don't treat stale RSS-capped (<= 15) results as valid full-channel cache
+    if (cached && cached.length > 15) return cached;
+
+    const uploadsPlaylistId = this.channelId.startsWith('UC')
+      ? 'UU' + this.channelId.substring(2)
+      : `UU${this.channelId}`;
 
     let videoItems: YouTubeVideoItem[] = [];
 
-    // 1. Try RSS XML Feed (0 quota consumption)
-    try {
-      const rssItems = await this.fetchFromRss(this.channelId, 100);
-      if (rssItems.length > 0) {
-        await this.setCached(cacheKey, rssItems, 1800);
-        return rssItems;
-      }
-    } catch {
-      // ignore
-    }
-
-    // 2. Try YouTube Data API v3 via Playlist Items (uploads playlist)
+    // 1. Try YouTube Data API v3 via Playlist Items (uploads playlist)
     if (this.apiKey && this.channelId) {
       try {
-        // Uploads playlist ID is channelId with 2nd character replaced with 'U'
-        const uploadsPlaylistId =
-          this.channelId.startsWith('UC')
-            ? 'UU' + this.channelId.substring(2)
-            : `UU${this.channelId}`;
-
-        // Fetch up to 100 items (2 pages of 50 items max)
         const rawPlaylistItems: any[] = [];
         let nextPageToken: string | undefined = undefined;
         let pageCount = 0;
@@ -364,14 +509,13 @@ export class YouTubeService {
           }
           nextPageToken = pJson.nextPageToken;
           pageCount++;
-        } while (nextPageToken && pageCount < 2);
+        } while (nextPageToken && pageCount < 10);
 
         if (rawPlaylistItems.length > 0) {
           const videoIds = rawPlaylistItems
             .map((item) => item.contentDetails?.videoId || item.snippet?.resourceId?.videoId)
             .filter(Boolean);
 
-          // Batch fetch video details (durations, statistics) in chunks of 50
           const detailsMap = new Map<string, { duration: string; views: string; likes: string }>();
 
           for (let i = 0; i < videoIds.length; i += 50) {
@@ -456,7 +600,18 @@ export class YouTubeService {
       }
     }
 
-    // 2. Fallback: Parse ytInitialData from YouTube Channel HTML
+    // 2. Try Innertube Uploads Playlist (Fetches all 87+ videos directly without API key)
+    try {
+      const innertubeItems = await this.fetchFromInnertube(uploadsPlaylistId);
+      if (innertubeItems.length > 0) {
+        await this.setCached(cacheKey, innertubeItems, 1800);
+        return innertubeItems;
+      }
+    } catch (innertubeErr: any) {
+      this.logger.warn(`Failed to fetch videos via Innertube: ${innertubeErr.message}`);
+    }
+
+    // 3. Fallback: Parse ytInitialData from YouTube Channel HTML (Supports lockupViewModel & videoRenderer)
     try {
       const channelUrl = `https://www.youtube.com/${this.channelHandle}/videos`;
       const res = await fetch(channelUrl, {
@@ -486,13 +641,50 @@ export class YouTubeService {
           const scrapedItems: YouTubeVideoItem[] = [];
 
           for (const c of contents) {
+            const lockup = c.richItemRenderer?.content?.lockupViewModel;
             const vRenderer = c.richItemRenderer?.content?.videoRenderer;
-            if (vRenderer && vRenderer.videoId) {
+
+            if (lockup && lockup.contentId) {
+              const vidId = lockup.contentId;
+              const title = this.decodeXmlEntities(
+                (lockup.metadata?.lockupMetadataViewModel?.title?.content || 'Video').trim(),
+              );
+              const parts =
+                lockup.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel
+                  ?.metadataRows?.[0]?.metadataParts || [];
+              const views = parts[0]?.accessibilityLabel || parts[0]?.text?.content || '100+ views';
+              const dateStr = parts[1]?.text?.content || new Date().toISOString();
+              const thumb = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
+
+              scrapedItems.push({
+                id: vidId,
+                title,
+                eventName: title,
+                description: '',
+                src: `https://www.youtube.com/watch?v=${vidId}`,
+                url: `https://www.youtube.com/watch?v=${vidId}`,
+                fileUrl: [`https://www.youtube.com/watch?v=${vidId}`],
+                embedUrl: `https://www.youtube.com/embed/${vidId}`,
+                poster: thumb,
+                posterUrl: thumb,
+                thumbnail: thumb,
+                category: this.categorizeVideo(title, ''),
+                directory: '/album/videos',
+                date: dateStr,
+                publishedAt: dateStr,
+                duration: '1:15',
+                views,
+                channelTitle: this.channelHandle || '',
+                channelId: this.channelId,
+                source: 'youtube',
+                isYouTube: true,
+                isFeatured: scrapedItems.length === 0,
+              });
+            } else if (vRenderer && vRenderer.videoId) {
               const vidId = vRenderer.videoId;
-              const title =
-                vRenderer.title?.runs?.[0]?.text ||
-                vRenderer.title?.simpleText ||
-                'Video';
+              const title = this.decodeXmlEntities(
+                (vRenderer.title?.runs?.[0]?.text || vRenderer.title?.simpleText || 'Video').trim(),
+              );
               const duration =
                 vRenderer.lengthText?.simpleText ||
                 vRenderer.lengthText?.runs?.[0]?.text ||
@@ -545,6 +737,17 @@ export class YouTubeService {
       }
     } catch (scrapedErr: any) {
       this.logger.warn(`Failed fallback channel scraping: ${scrapedErr.message}`);
+    }
+
+    // 4. Last Resort Fallback: RSS XML Feed (Google caps this to latest 15 videos)
+    try {
+      const rssItems = await this.fetchFromRss(this.channelId, 100);
+      if (rssItems.length > 0) {
+        await this.setCached(cacheKey, rssItems, 1800);
+        return rssItems;
+      }
+    } catch {
+      // ignore
     }
 
     return [];

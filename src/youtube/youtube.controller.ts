@@ -10,7 +10,7 @@ import { YouTubeService } from './youtube.service';
 import { YouTubeQueryDto } from './dto/youtube-query.dto';
 
 @ApiTags('YouTube')
-@Controller(['v1/youtube', 'youtube'])
+@Controller('v1/youtube')
 export class YouTubeController {
   constructor(private readonly youtubeService: YouTubeService) {}
 
