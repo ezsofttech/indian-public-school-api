@@ -41,11 +41,12 @@ export class UploadsService {
     const provider = this.configService.get<string>('STORAGE_PROVIDER', 'cloudinary');
 
     if (provider === 'cloudinary') {
-      const publicId = extractCloudinaryPublicId(url);
-      if (publicId) {
-        this.logger.log(`Deleting Cloudinary asset with public ID: ${publicId}`);
-        return this.cloudinaryStrategy.deleteFile(publicId);
-      }
+      const publicIdWithExt = extractCloudinaryPublicId(url, true);
+      const publicIdWithoutExt = extractCloudinaryPublicId(url, false);
+      const targetKey = publicIdWithExt || publicIdWithoutExt || url;
+
+      this.logger.log(`Deleting Cloudinary asset for URL/key: ${url} (resolved key: ${targetKey})`);
+      return this.cloudinaryStrategy.deleteFile(targetKey);
     } else {
       const filename = url.replace(/^\/uploads\//, '');
       if (filename) {

@@ -219,24 +219,76 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
   async deleteFile(key: string): Promise<boolean> {
     try {
       this.invalidateCache();
-      // 1. Try image resource_type
-      let result = await cloudinary.uploader.destroy(key, { resource_type: 'image' });
-      if (result && result.result === 'ok') return true;
+      const rootFolder = getCloudinaryRootFolder(this.configService);
 
-      // Also try key without .pdf if key had .pdf
-      if (key.toLowerCase().endsWith('.pdf')) {
-        const keyWithoutPdf = key.slice(0, -4);
-        result = await cloudinary.uploader.destroy(keyWithoutPdf, { resource_type: 'image' });
-        if (result && result.result === 'ok') return true;
+      // Normalize key by stripping protocol, domain, and /upload/ path if present
+      const cleanKey = key
+        .replace(/^https?:\/\/[^\/]+\/(?:raw|image|video)\/upload\/(?:v\d+\/)?/, '')
+        .replace(/^\/+/, '');
+
+      const keyWithoutExt = cleanKey.replace(/\.[a-zA-Z0-9]+$/, '');
+      const keyWithRoot = cleanKey.toLowerCase().startsWith(rootFolder.toLowerCase())
+        ? cleanKey
+        : `${rootFolder}/${cleanKey}`;
+      const keyWithRootWithoutExt = keyWithRoot.replace(/\.[a-zA-Z0-9]+$/, '');
+
+      const candidateKeys = Array.from(new Set([
+        cleanKey,
+        keyWithRoot,
+        keyWithoutExt,
+        keyWithRootWithoutExt,
+      ])).filter(Boolean);
+
+      const primaryConfig = {
+        cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
+        api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
+        api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
+      };
+
+      const configs = [primaryConfig];
+
+      // Cross-cloud deletion fallback to ensure legacy files (dnw7mgysa <-> niefrrkx) are properly cleaned up
+      const secondaryName = primaryConfig.cloud_name === 'dnw7mgysa' ? 'niefrrkx' : 'dnw7mgysa';
+      const secondaryKey = secondaryName === 'niefrrkx' ? '439722964466118' : '727794366589874';
+      const secondarySecret = secondaryName === 'niefrrkx' ? 'kbxe8cBJ5eA-ohuWOO9_hAKgQGE' : 'oIZ3h6dnPsNzqW5UZiMhRn_7vlQ';
+      configs.push({
+        cloud_name: secondaryName,
+        api_key: secondaryKey,
+        api_secret: secondarySecret,
+      });
+
+      let anyDeleted = false;
+
+      for (const cfg of configs) {
+        if (!cfg.cloud_name || !cfg.api_key || !cfg.api_secret) continue;
+        cloudinary.config(cfg);
+
+        for (const candidate of candidateKeys) {
+          const hasRawExt = /\.(pdf|docx?|xlsx?|zip|rar|pptx?|txt|csv)$/i.test(candidate);
+          const resourceTypes: Array<'raw' | 'image' | 'video'> = hasRawExt
+            ? ['raw', 'image', 'video']
+            : ['image', 'video', 'raw'];
+
+          for (const rt of resourceTypes) {
+            try {
+              const res = await cloudinary.uploader.destroy(candidate, { resource_type: rt });
+              if (res && res.result === 'ok') {
+                this.logger.log(`Cloudinary asset destroyed successfully: [${cfg.cloud_name}] ${candidate} (${rt})`);
+                anyDeleted = true;
+                break;
+              }
+            } catch {
+              // continue trying
+            }
+          }
+          if (anyDeleted) break;
+        }
+        if (anyDeleted) break;
       }
 
-      // 2. Try video resource_type
-      result = await cloudinary.uploader.destroy(key, { resource_type: 'video' });
-      if (result && result.result === 'ok') return true;
-
-      // 3. Try raw resource_type (PDF, zip, doc, etc.)
-      result = await cloudinary.uploader.destroy(key, { resource_type: 'raw' });
-      return result && result.result === 'ok';
+      // Restore primary config
+      cloudinary.config(primaryConfig);
+      return anyDeleted;
     } catch (err) {
       this.logger.error(`Error deleting Cloudinary asset ${key}`, err);
       return false;

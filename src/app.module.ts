@@ -26,6 +26,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
+      envFilePath: ['.env', 'src/.env'],
       isGlobal: true,
     }),
     CacheModule.register({

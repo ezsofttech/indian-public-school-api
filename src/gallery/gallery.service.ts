@@ -339,12 +339,18 @@ export class GalleryService {
     // If id is a cdn- ID or direct Cloudinary key/URL
     if (id.startsWith('cdn-') || id.includes('http') || id.includes('/')) {
       let targetUrl = id.replace(/^cdn-/, '');
+      const filename = targetUrl.split('/').pop() || '';
 
       // Check if DB record exists for this item
+      const searchConditions: any[] = [{ fileUrl: targetUrl }, { fileUrl: `/${targetUrl}` }];
+      if (filename) {
+        searchConditions.push({ fileUrl: { $regex: filename, $options: 'i' } });
+      }
+
       const existing = await this.galleryRepository.findAll(
         { page: 1, limit: 10 },
         [],
-        { fileUrl: { $in: [targetUrl] } },
+        { $or: searchConditions },
       );
       const items = existing.items || (existing as any).data || [];
 

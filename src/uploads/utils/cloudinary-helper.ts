@@ -4,12 +4,19 @@
  * https://res.cloudinary.com/demo/image/upload/v1234567890/folder/sample.jpg -> folder/sample
  * https://res.cloudinary.com/demo/image/upload/sample.png -> sample
  */
-export function extractCloudinaryPublicId(url: string): string | null {
+export function extractCloudinaryPublicId(url: string, preserveExtension: boolean = false): string | null {
   if (!url || typeof url !== 'string') return null;
 
   const decodedUrl = decodeURIComponent(url);
 
   // If it's a full Cloudinary URL with /upload/
+  if (preserveExtension) {
+    const matchWithExt = decodedUrl.match(/\/upload\/(?:v\d+\/)?(.+)$/);
+    if (matchWithExt && matchWithExt[1]) {
+      return matchWithExt[1];
+    }
+  }
+
   const match = decodedUrl.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/);
   if (match && match[1]) {
     return match[1];
@@ -18,7 +25,7 @@ export function extractCloudinaryPublicId(url: string): string | null {
   // If it's already a Cloudinary public ID or key without http(s)://
   if (!decodedUrl.startsWith('http://') && !decodedUrl.startsWith('https://')) {
     const cleanPath = decodedUrl.replace(/^\/+/, '');
-    // Remove extension if present, but keep folder hierarchy
+    if (preserveExtension) return cleanPath;
     return cleanPath.replace(/\.[a-zA-Z0-9]+$/, '');
   }
 
@@ -26,6 +33,7 @@ export function extractCloudinaryPublicId(url: string): string | null {
   const parts = decodedUrl.split('/');
   const filename = parts[parts.length - 1];
   if (filename) {
+    if (preserveExtension) return filename;
     return filename.replace(/\.[a-zA-Z0-9]+$/, '');
   }
 
