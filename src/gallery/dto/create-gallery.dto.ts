@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { GalleryEventType } from '../schemas/gallery.schema';
+import { GalleryAlbum, GalleryEventType } from '../schemas/gallery.schema';
 
 export class CreateGalleryDto {
   @ApiProperty({
@@ -11,6 +11,16 @@ export class CreateGalleryDto {
   @IsString()
   @IsNotEmpty()
   eventName: string;
+
+  @ApiPropertyOptional({
+    example: 'Events',
+    enum: GalleryAlbum,
+    default: GalleryAlbum.EVENTS,
+    description: 'Album category name for photo grouping (e.g. Events, Campus, Sports)',
+  })
+  @IsOptional()
+  @IsString()
+  album?: string;
 
   @ApiPropertyOptional({
     example: 'Sports',
@@ -23,9 +33,9 @@ export class CreateGalleryDto {
   eventType?: string;
 
   @ApiPropertyOptional({
-    example: '/album/sports',
-    default: '/album/General',
-    description: 'Directory folder path to organize set of images (e.g. /album/sports)',
+    example: 'Album/Events',
+    default: 'Album/Events',
+    description: 'Directory folder path to organize set of images (e.g. Album/Events, Album/Sports)',
   })
   @IsOptional()
   @IsString()

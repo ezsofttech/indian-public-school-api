@@ -16,6 +16,26 @@ export enum GalleryEventType {
   CELEBRATION = 'Celebration',
   ACADEMIC = 'Academic',
   INFRASTRUCTURE = 'Infrastructure',
+  OTHERS = 'Others',
+}
+
+export enum GalleryAlbum {
+  EVENTS = 'Events',
+  CAMPUS = 'Campus',
+  SPORTS = 'Sports',
+  ACTIVITIES = 'Activities',
+  HOSTEL = 'Hostel',
+  ARTS = 'Arts',
+  INFRASTRUCTURE = 'Infrastructure',
+  CELEBRATION = 'Celebration',
+  ACADEMIC = 'Academic',
+  ACHIEVEMENTS = 'Achievements',
+  COMPETITIONS = 'Competitions',
+  EMPOWERMENT = 'Empowerment',
+  PARTNERS = 'Partners',
+  AWARENESS = 'Awareness',
+  GENERAL = 'General',
+  OTHERS = 'Others',
 }
 
 export type GalleryDocument = Gallery & Document;
@@ -33,10 +53,13 @@ export class Gallery {
   @Prop({ required: true, trim: true, index: true })
   eventName!: string;
 
-  @Prop({ trim: true, default: GalleryEventType.GENERAL, index: true })
+  @Prop({ trim: true, default: GalleryAlbum.EVENTS, index: true })
+  album?: string;
+
+  @Prop({ trim: true, default: GalleryEventType.EVENTS, index: true })
   eventType?: string;
 
-  @Prop({ trim: true, default: '/album/General', index: true })
+  @Prop({ trim: true, default: 'Album/Events', index: true })
   directory?: string;
 
   @Prop({ type: [String], required: false, default: [] })

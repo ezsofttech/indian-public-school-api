@@ -124,13 +124,14 @@ export class UploadsService {
         const sub = cleanFolder.replace(/^album\//i, '');
         const formattedSub = sub ? sub.charAt(0).toUpperCase() + sub.slice(1) : 'General';
         targetFolder = `${assetsPrefix}/Album/${formattedSub}`;
+      } else if (cleanFolder.toLowerCase() === 'others' || cleanFolder.toLowerCase() === 'other') {
+        targetFolder = `${assetsPrefix}/Others`;
       } else {
         targetFolder = `${assetsPrefix}/${cleanFolder}`;
       }
-    } else if (rawAlbumInput && rawAlbumInput !== 'General' && rawAlbumInput !== 'Galleries' && rawAlbumInput !== 'Gallery') {
-      targetFolder = `${assetsPrefix}/Album/${rawAlbumInput}`;
     } else {
-      targetFolder = `${assetsPrefix}/Album`;
+      // User did not pass directory name -> store inside others (not inside album)
+      targetFolder = `${assetsPrefix}/Others`;
     }
 
     // Final check: Guarantee no duplicate ips-education/assets/assets/ or assets/assets/ in targetFolder
@@ -158,6 +159,12 @@ export class UploadsService {
     else if (processedFile.mimetype.startsWith('video/')) fileType = 'video';
     else if (processedFile.mimetype === 'application/pdf') fileType = 'pdf';
 
+    const isOthersUpload =
+      targetFolder.toLowerCase().endsWith('/others') ||
+      lowerFolder === 'others' ||
+      lowerAlbum === 'others' ||
+      lowerAlbum.includes('visual editor');
+
     const isSettingsUpload = targetFolder.includes('/Settings/');
     const eventType = isSettingsUpload
       ? (targetFolder.endsWith('/Icons') || lowerFolder.includes('icons') || lowerAlbum.includes('icons')
@@ -167,11 +174,13 @@ export class UploadsService {
           : targetFolder.endsWith('/Home') || lowerFolder.includes('home') || lowerAlbum.includes('home')
           ? 'Home'
           : 'Settings')
+      : isOthersUpload
+      ? 'Others'
       : isDoc
       ? (album && album !== 'General' ? album : 'Documents')
       : (album || 'General');
 
-    const directoryPath = targetFolder;
+    const directoryPath = isOthersUpload ? 'Others' : targetFolder;
 
     const computedEventName = altText && altText.trim() ? altText.trim() : eventType;
 

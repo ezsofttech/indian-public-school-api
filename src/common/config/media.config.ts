@@ -330,6 +330,8 @@ export function transformMediaPathsToFull<T>(
         trimmed.startsWith('/Videos') ||
         trimmed.startsWith('/PressRelease') ||
         trimmed.startsWith('/Review') ||
+        trimmed.startsWith('/Others') ||
+        trimmed.startsWith('/others') ||
         trimmed.startsWith('/image/upload') ||
         trimmed.startsWith('/video/upload') ||
         trimmed.startsWith('/raw/upload') ||

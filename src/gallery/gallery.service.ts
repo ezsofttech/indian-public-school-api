@@ -24,6 +24,28 @@ function cleanAssetPath(url: string): string {
   return '/' + clean;
 }
 
+export function extractAlbumName(album?: string, directory?: string, eventType?: string): string {
+  if (album && album.trim()) {
+    const a = album.trim();
+    if (a.toLowerCase().startsWith('album/')) {
+      return a.slice('album/'.length);
+    }
+    return a;
+  }
+  const dir = String(directory || '').trim();
+  if (dir.toLowerCase().includes('album')) {
+    const parts = dir.replace(/^[/\\]+|[/\\]+$/g, '').split(/[/\\]+/);
+    const idx = parts.findIndex((p) => p.toLowerCase() === 'album');
+    if (idx !== -1 && parts[idx + 1]) {
+      return parts[idx + 1];
+    }
+  }
+  if (eventType && eventType.trim() && eventType.toLowerCase() !== 'general') {
+    return eventType.trim();
+  }
+  return 'General';
+}
+
 @Injectable()
 export class GalleryService {
   private readonly logger = new Logger(GalleryService.name);
@@ -51,6 +73,13 @@ export class GalleryService {
   async create(createGalleryDto: CreateGalleryDto) {
     if (createGalleryDto.eventName) {
       createGalleryDto.eventName = formatPrettyEventName(createGalleryDto.eventName);
+    }
+    if (!createGalleryDto.album) {
+      createGalleryDto.album = extractAlbumName(undefined, createGalleryDto.directory, createGalleryDto.eventType);
+    }
+    if (!createGalleryDto.directory || createGalleryDto.directory === '/album/General') {
+      const alb = createGalleryDto.album || 'Events';
+      createGalleryDto.directory = alb.toLowerCase() === 'others' ? 'Others' : `Album/${alb}`;
     }
     if (Array.isArray(createGalleryDto.fileUrl)) {
       createGalleryDto.fileUrl = createGalleryDto.fileUrl.map(u => cleanAssetPath(u));
@@ -91,8 +120,8 @@ export class GalleryService {
     return created;
   }
 
-  async findAll(queryDto: PaginationQueryDto = {}, eventType?: string, directory?: string) {
-    const cacheKey = `gallery_list_${JSON.stringify(queryDto)}_${eventType || ''}_${directory || ''}`;
+  async findAll(queryDto: PaginationQueryDto = {}, eventType?: string, directory?: string, album?: string) {
+    const cacheKey = `gallery_list_${JSON.stringify(queryDto)}_${eventType || ''}_${directory || ''}_${album || ''}`;
     try {
       const cached = await this.cacheManager.get(cacheKey);
       if (cached) return cached;
@@ -104,6 +133,14 @@ export class GalleryService {
     const limit = Math.max(1, Math.min(500, Number(queryDto.limit) || 10));
     const search = (queryDto.search || '').trim().toLowerCase();
 
+    // Determine album filter value from all possible query parameters
+    let activeAlbum = (album || (queryDto as any).album || '').trim();
+    if (!activeAlbum && (queryDto as any).filterKey && (queryDto as any).filterValue) {
+      if (String((queryDto as any).filterKey).toLowerCase() === 'album') {
+        activeAlbum = String((queryDto as any).filterValue).trim();
+      }
+    }
+
     // Determine eventType filter value from all possible query parameters
     let activeEventType = (eventType || (queryDto as any).eventType || '').trim();
     if (!activeEventType && (queryDto as any).filterKey && (queryDto as any).filterValue) {
@@ -111,7 +148,7 @@ export class GalleryService {
         activeEventType = String((queryDto as any).filterValue).trim();
       }
     }
-    if (!activeEventType && (queryDto as any).filterValue && (queryDto as any).filterValue !== 'All' && (queryDto as any).filterKey !== 'directory') {
+    if (!activeEventType && (queryDto as any).filterValue && (queryDto as any).filterValue !== 'All' && (queryDto as any).filterKey !== 'directory' && (queryDto as any).filterKey !== 'album') {
       activeEventType = String((queryDto as any).filterValue).trim();
     }
 
@@ -133,7 +170,12 @@ export class GalleryService {
       [],
       {},
     );
-    const dbItems = dbResult.items || (dbResult as any).data || [];
+    const rawDbItems = dbResult.items || (dbResult as any).data || [];
+    const dbItems = rawDbItems.map((item: any) => {
+      const doc = item.toObject ? item.toObject() : { ...item };
+      doc.album = extractAlbumName(doc.album, doc.directory, doc.eventType);
+      return doc;
+    });
 
     // 2. Map DB file URLs
     const dbUrls = new Set<string>();
@@ -177,16 +219,37 @@ export class GalleryService {
 
       if (!existsInDb) {
         const cat = res.category || 'General';
-        const dirPath = cat.includes('/') || cat.startsWith('/')
-          ? cat
-          : `/album/${cat.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        const lowerCat = cat.toLowerCase();
+        let dirPath: string;
+        let eventType = cat;
+        let albumName: string;
+
+        if (lowerCat === 'others' || lowerCat === 'other' || lowerCat.includes('visual editor')) {
+          dirPath = 'Others';
+          eventType = 'Others';
+          albumName = 'Others';
+        } else if (cat.toLowerCase().startsWith('album/')) {
+          albumName = cat.slice('album/'.length);
+          dirPath = cat;
+          eventType = albumName;
+        } else if (cat.includes('/') || cat.startsWith('/')) {
+          dirPath = cat;
+          const parts = cat.split('/').filter(Boolean);
+          albumName = parts[parts.length - 1] || 'General';
+          eventType = albumName;
+        } else {
+          albumName = cat;
+          dirPath = `Album/${cat}`;
+          eventType = cat;
+        }
 
         virtualItems.push({
           _id: `cdn-${res.id || idx}`,
           id: `cdn-${res.id || idx}`,
           publicId: res.id || `cdn-${idx}`,
-          eventName: res.title || cat,
-          eventType: cat,
+          eventName: lowerCat.includes('visual editor') ? 'Others Asset' : (res.title || cat),
+          album: albumName,
+          eventType,
           directory: dirPath,
           fileUrl: [res.url],
           mimeType: res.mimeType || (res.format === 'pdf' ? 'application/pdf' : res.resourceType === 'video' ? `video/${res.format || 'mp4'}` : `image/${res.format || 'jpeg'}`),
@@ -200,7 +263,25 @@ export class GalleryService {
     // 5. Combine DB records and virtual CDN records into complete dataset
     let combined = [...dbItems, ...virtualItems];
 
-    // 6. Apply case-insensitive eventType filter
+    // 6. Apply case-insensitive album filter
+    if (activeAlbum && activeAlbum.toLowerCase() !== 'all') {
+      const targetAlbum = activeAlbum.trim().toLowerCase();
+      combined = combined.filter((item: any) => {
+        const itemAlbum = String(item.album || '').trim().toLowerCase();
+        const itemDir = String(item.directoryName || item.directory || '').trim().toLowerCase();
+        const itemType = String(item.eventType || '').trim().toLowerCase();
+        const itemUrls = Array.isArray(item.fileUrl) ? item.fileUrl : [item.fileUrl];
+        return (
+          itemAlbum === targetAlbum ||
+          itemDir === `album/${targetAlbum}` ||
+          itemDir.endsWith(`/${targetAlbum}`) ||
+          itemType === targetAlbum ||
+          itemUrls.some((u: string) => String(u).toLowerCase().includes(`/album/${targetAlbum}`))
+        );
+      });
+    }
+
+    // 6a. Apply case-insensitive eventType filter
     if (activeEventType && activeEventType.toLowerCase() !== 'all') {
       combined = combined.filter((item: any) => {
         const itemType = String(item.eventType || '').trim().toLowerCase();
@@ -218,15 +299,16 @@ export class GalleryService {
       });
     }
 
-    // 7. Apply case-insensitive search across eventName, eventType, directory, publicId, and fileUrl
+    // 7. Apply case-insensitive search across eventName, album, eventType, directory, publicId, and fileUrl
     if (search) {
       combined = combined.filter((item: any) => {
         const nameMatch = String(item.eventName || '').toLowerCase().includes(search);
+        const albumMatch = String(item.album || '').toLowerCase().includes(search);
         const typeMatch = String(item.eventType || '').toLowerCase().includes(search);
         const dirMatch = String(item.directoryName || item.directory || '').toLowerCase().includes(search);
         const publicIdMatch = String(item.publicId || item._id || item.id || '').toLowerCase().includes(search);
         const urlMatch = Array.isArray(item.fileUrl) && item.fileUrl.some((u: string) => String(u).toLowerCase().includes(search));
-        return nameMatch || typeMatch || dirMatch || publicIdMatch || urlMatch;
+        return nameMatch || albumMatch || typeMatch || dirMatch || publicIdMatch || urlMatch;
       });
     }
 
@@ -277,24 +359,43 @@ export class GalleryService {
       const rawId = id.replace(/^cdn-/, '');
       const found = cdnResources.find((r: any) => r.id === rawId || r.url.includes(rawId));
       if (found) {
+        const rawCat = found.category || 'General';
+        const isOthers = rawCat.toLowerCase() === 'others' || rawCat.toLowerCase().includes('visual editor');
+        const albumName = isOthers ? 'Others' : extractAlbumName(undefined, rawCat, rawCat);
+        const eventType = isOthers ? 'Others' : albumName;
+        const directory = isOthers ? 'Others' : (rawCat.toLowerCase().startsWith('album/') ? rawCat : `Album/${albumName}`);
         return {
           _id: id,
           id,
-          eventName: found.title || 'Cloudinary Asset',
-          eventType: found.category || 'General',
-          directory: `/album/${(found.category || 'General').toLowerCase()}`,
+          eventName: found.title || (isOthers ? 'Others Asset' : 'Cloudinary Asset'),
+          album: albumName,
+          eventType,
+          directory,
           fileUrl: [found.url],
           mimeType: (found as any).mimeType || (found.format === 'pdf' ? 'application/pdf' : found.resourceType === 'video' ? `video/${found.format || 'mp4'}` : `image/${found.format || 'jpeg'}`),
           isCdnResource: true,
         };
       }
     }
-    return this.galleryRepository.findById(id);
+    const item = await this.galleryRepository.findById(id);
+    if (item) {
+      const doc = (item as any).toObject ? (item as any).toObject() : item;
+      doc.album = extractAlbumName(doc.album, doc.directory, doc.eventType);
+      return doc;
+    }
+    return item;
   }
 
   async update(id: string, updateGalleryDto: UpdateGalleryDto) {
     if (updateGalleryDto.eventName) {
       updateGalleryDto.eventName = formatPrettyEventName(updateGalleryDto.eventName);
+    }
+    if (!updateGalleryDto.album && (updateGalleryDto.directory || updateGalleryDto.eventType)) {
+      updateGalleryDto.album = extractAlbumName(undefined, updateGalleryDto.directory, updateGalleryDto.eventType);
+    }
+    if (updateGalleryDto.album && (!updateGalleryDto.directory || updateGalleryDto.directory === '/album/General')) {
+      const alb = updateGalleryDto.album;
+      updateGalleryDto.directory = alb.toLowerCase() === 'others' ? 'Others' : `Album/${alb}`;
     }
     if (Array.isArray(updateGalleryDto.fileUrl)) {
       updateGalleryDto.fileUrl = updateGalleryDto.fileUrl.map(u => cleanAssetPath(u));
@@ -304,10 +405,14 @@ export class GalleryService {
     }
     if (id.startsWith('cdn-')) {
       // Upsert into MongoDB so updates/metadata changes persist
+      const rawAlbum = updateGalleryDto.album || extractAlbumName(undefined, updateGalleryDto.directory, updateGalleryDto.eventType);
+      const isOthers = rawAlbum.toLowerCase() === 'others' || (updateGalleryDto.eventType || '').toLowerCase().includes('visual editor');
+      const defaultDir = isOthers ? 'Others' : `Album/${rawAlbum}`;
       const created = await this.galleryRepository.create({
-        eventName: updateGalleryDto.eventName || 'Cloudinary Asset',
-        eventType: updateGalleryDto.eventType || 'General',
-        directory: updateGalleryDto.directory || `/album/${(updateGalleryDto.eventType || 'General').toLowerCase()}`,
+        eventName: updateGalleryDto.eventName || (isOthers ? 'Others Asset' : 'Cloudinary Asset'),
+        album: isOthers ? 'Others' : rawAlbum,
+        eventType: isOthers ? 'Others' : (updateGalleryDto.eventType || rawAlbum),
+        directory: updateGalleryDto.directory || defaultDir,
         fileUrl: updateGalleryDto.fileUrl || [],
         mimeType: updateGalleryDto.mimeType,
       });

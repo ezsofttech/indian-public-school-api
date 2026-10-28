@@ -37,6 +37,8 @@ export class UploadsController {
           format: 'binary',
         },
         album: { type: 'string', nullable: true },
+        folder: { type: 'string', nullable: true },
+        directory: { type: 'string', nullable: true },
         altText: { type: 'string', nullable: true },
       },
     },
@@ -46,9 +48,11 @@ export class UploadsController {
     @UploadedFile() file: Express.Multer.File,
     @Body('album') album?: string,
     @Body('folder') folder?: string,
+    @Body('directory') directory?: string,
     @Body('altText') altText?: string,
   ) {
-    return this.uploadsService.upload(file, album, altText, folder);
+    const targetFolder = (folder || directory || '').trim();
+    return this.uploadsService.upload(file, album, altText, targetFolder || undefined);
   }
 
   @Post('public')
