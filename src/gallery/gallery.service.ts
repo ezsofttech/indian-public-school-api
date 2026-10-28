@@ -24,6 +24,20 @@ function cleanAssetPath(url: string): string {
   return '/' + clean;
 }
 
+export function getCanonicalAssetKey(url: string): string {
+  if (!url || typeof url !== 'string') return '';
+  let str = url.trim().toLowerCase();
+  try {
+    str = decodeURIComponent(str);
+  } catch {}
+  str = str.split('?')[0].split('#')[0];
+  const filename = str.split('/').pop() || '';
+  if (filename && filename.includes('.') && filename.length > 5) {
+    return filename;
+  }
+  return str.replace(/^https?:\/\/[^\/]+/i, '').replace(/^\/+/, '');
+}
+
 export function extractAlbumName(album?: string, directory?: string, eventType?: string): string {
   if (album && album.trim()) {
     const a = album.trim();
@@ -39,11 +53,47 @@ export function extractAlbumName(album?: string, directory?: string, eventType?:
     if (idx !== -1 && parts[idx + 1]) {
       return parts[idx + 1];
     }
+    return 'General';
   }
-  if (eventType && eventType.trim() && eventType.toLowerCase() !== 'general') {
+  if (dir && !dir.toLowerCase().includes('album')) {
+    return dir;
+  }
+  if (eventType && eventType.trim() && !['general', 'others'].includes(eventType.toLowerCase())) {
     return eventType.trim();
   }
   return 'General';
+}
+
+export function inferDirectoryFromItem(directory?: string, fileUrl?: string | string[], album?: string, eventType?: string): string {
+  if (directory && directory.trim() && directory.trim() !== '/') {
+    return directory.trim();
+  }
+  const urls = Array.isArray(fileUrl) ? fileUrl : typeof fileUrl === 'string' ? [fileUrl] : [];
+  for (const u of urls) {
+    if (!u) continue;
+    const lower = u.toLowerCase();
+    if (lower.includes('/others/') || lower.includes('others')) return 'Others';
+    if (lower.includes('/documents/admission')) return 'Documents/Admission';
+    if (lower.includes('/documents/')) return 'Documents/General';
+    if (lower.includes('/settings/logos')) return 'Settings/Logos';
+    if (lower.includes('/settings/icons')) return 'Settings/Icons';
+    if (lower.includes('/settings/home') || lower.includes('/settings/')) return 'Settings/Home';
+    if (lower.includes('/student/')) return 'Student';
+    if (lower.includes('/staff/')) return 'Staff';
+    if (lower.includes('/videos/')) return 'Videos';
+    if (lower.includes('/pressrelease/') || lower.includes('/press/')) return 'PressRelease';
+    const match = u.match(/\/album\/([^\/\?#]+)/i);
+    if (match && match[1]) {
+      return `Album/${match[1].charAt(0).toUpperCase() + match[1].slice(1)}`;
+    }
+  }
+  if (album && album.trim() && !['general', 'others'].includes(album.toLowerCase())) {
+    return `Album/${album.trim()}`;
+  }
+  if (eventType && eventType.trim() && !['general', 'others'].includes(eventType.toLowerCase())) {
+    return `Album/${eventType.trim()}`;
+  }
+  return 'Others';
 }
 
 @Injectable()
@@ -120,8 +170,8 @@ export class GalleryService {
     return created;
   }
 
-  async findAll(queryDto: PaginationQueryDto = {}, eventType?: string, directory?: string, album?: string) {
-    const cacheKey = `gallery_list_${JSON.stringify(queryDto)}_${eventType || ''}_${directory || ''}_${album || ''}`;
+  async findAll(queryDto: PaginationQueryDto = {}, eventType?: string, directory?: string) {
+    const cacheKey = `gallery_list_${JSON.stringify(queryDto)}_${eventType || ''}_${directory || ''}`;
     try {
       const cached = await this.cacheManager.get(cacheKey);
       if (cached) return cached;
@@ -133,14 +183,6 @@ export class GalleryService {
     const limit = Math.max(1, Math.min(500, Number(queryDto.limit) || 10));
     const search = (queryDto.search || '').trim().toLowerCase();
 
-    // Determine album filter value from all possible query parameters
-    let activeAlbum = (album || (queryDto as any).album || '').trim();
-    if (!activeAlbum && (queryDto as any).filterKey && (queryDto as any).filterValue) {
-      if (String((queryDto as any).filterKey).toLowerCase() === 'album') {
-        activeAlbum = String((queryDto as any).filterValue).trim();
-      }
-    }
-
     // Determine eventType filter value from all possible query parameters
     let activeEventType = (eventType || (queryDto as any).eventType || '').trim();
     if (!activeEventType && (queryDto as any).filterKey && (queryDto as any).filterValue) {
@@ -148,7 +190,7 @@ export class GalleryService {
         activeEventType = String((queryDto as any).filterValue).trim();
       }
     }
-    if (!activeEventType && (queryDto as any).filterValue && (queryDto as any).filterValue !== 'All' && (queryDto as any).filterKey !== 'directory' && (queryDto as any).filterKey !== 'album') {
+    if (!activeEventType && (queryDto as any).filterValue && (queryDto as any).filterValue !== 'All' && (queryDto as any).filterKey !== 'directory') {
       activeEventType = String((queryDto as any).filterValue).trim();
     }
 
@@ -173,6 +215,7 @@ export class GalleryService {
     const rawDbItems = dbResult.items || (dbResult as any).data || [];
     const dbItems = rawDbItems.map((item: any) => {
       const doc = item.toObject ? item.toObject() : { ...item };
+      doc.directory = inferDirectoryFromItem(doc.directory, doc.fileUrl, doc.album, doc.eventType);
       doc.album = extractAlbumName(doc.album, doc.directory, doc.eventType);
       return doc;
     });
@@ -220,34 +263,75 @@ export class GalleryService {
       if (!existsInDb) {
         const cat = res.category || 'General';
         const lowerCat = cat.toLowerCase();
+        const lowerUrl = resUrl.toLowerCase();
+        const lowerId = resId.toLowerCase();
         let dirPath: string;
         let eventType = cat;
         let albumName: string;
 
-        if (lowerCat === 'others' || lowerCat === 'other' || lowerCat.includes('visual editor')) {
+        const isAlbum =
+          lowerCat.startsWith('album/') ||
+          lowerCat === 'album' ||
+          lowerUrl.includes('/album/') ||
+          lowerId.includes('/album/');
+
+        if (lowerCat === 'others' || lowerCat === 'other' || lowerCat.includes('visual editor') || lowerUrl.includes('/others/')) {
           dirPath = 'Others';
           eventType = 'Others';
           albumName = 'Others';
-        } else if (cat.toLowerCase().startsWith('album/')) {
-          albumName = cat.slice('album/'.length);
+        } else if (lowerCat === 'home' || lowerUrl.includes('/settings/home')) {
+          dirPath = 'Settings/Home';
+          eventType = 'Home';
+          albumName = 'Home';
+        } else if (lowerCat === 'popupbanner' || lowerCat.includes('popup') || lowerUrl.includes('popup')) {
+          dirPath = 'Others';
+          eventType = 'Others';
+          albumName = 'Others';
+        } else if (lowerCat === 'news' || lowerCat.includes('press') || lowerUrl.includes('/press')) {
+          dirPath = 'PressRelease';
+          eventType = 'PressRelease';
+          albumName = 'PressRelease';
+        } else if (lowerCat === 'student' || lowerUrl.includes('/student/')) {
+          dirPath = 'Student';
+          eventType = 'Student';
+          albumName = 'Student';
+        } else if (lowerCat === 'staff' || lowerUrl.includes('/staff/')) {
+          dirPath = 'Staff';
+          eventType = 'Staff';
+          albumName = 'Staff';
+        } else if (lowerCat === 'videos' || lowerUrl.includes('/videos/')) {
+          dirPath = 'Videos';
+          eventType = 'Videos';
+          albumName = 'Videos';
+        } else if (lowerCat.startsWith('documents') || lowerUrl.includes('/documents/')) {
+          dirPath = lowerCat.includes('admission') ? 'Documents/Admission' : 'Documents/General';
+          eventType = 'Documents';
+          albumName = 'Documents';
+        } else if (lowerCat.startsWith('settings') || lowerUrl.includes('/settings/')) {
           dirPath = cat;
-          eventType = albumName;
-        } else if (cat.includes('/') || cat.startsWith('/')) {
-          dirPath = cat;
-          const parts = cat.split('/').filter(Boolean);
-          albumName = parts[parts.length - 1] || 'General';
-          eventType = albumName;
+          eventType = 'Settings';
+          albumName = 'Settings';
+        } else if (isAlbum) {
+          if (lowerCat.startsWith('album/')) {
+            albumName = cat.slice('album/'.length);
+            dirPath = cat;
+            eventType = albumName;
+          } else {
+            albumName = cat === 'General' ? 'Events' : cat;
+            dirPath = `Album/${albumName}`;
+            eventType = albumName;
+          }
         } else {
-          albumName = cat;
-          dirPath = `Album/${cat}`;
+          dirPath = cat;
           eventType = cat;
+          albumName = cat;
         }
 
         virtualItems.push({
           _id: `cdn-${res.id || idx}`,
           id: `cdn-${res.id || idx}`,
           publicId: res.id || `cdn-${idx}`,
-          eventName: lowerCat.includes('visual editor') ? 'Others Asset' : (res.title || cat),
+          eventName: (dirPath === 'Others' || lowerCat.includes('visual editor')) ? 'Others Asset' : (res.title || cat),
           album: albumName,
           eventType,
           directory: dirPath,
@@ -263,25 +347,26 @@ export class GalleryService {
     // 5. Combine DB records and virtual CDN records into complete dataset
     let combined = [...dbItems, ...virtualItems];
 
-    // 6. Apply case-insensitive album filter
-    if (activeAlbum && activeAlbum.toLowerCase() !== 'all') {
-      const targetAlbum = activeAlbum.trim().toLowerCase();
-      combined = combined.filter((item: any) => {
-        const itemAlbum = String(item.album || '').trim().toLowerCase();
-        const itemDir = String(item.directoryName || item.directory || '').trim().toLowerCase();
-        const itemType = String(item.eventType || '').trim().toLowerCase();
-        const itemUrls = Array.isArray(item.fileUrl) ? item.fileUrl : [item.fileUrl];
-        return (
-          itemAlbum === targetAlbum ||
-          itemDir === `album/${targetAlbum}` ||
-          itemDir.endsWith(`/${targetAlbum}`) ||
-          itemType === targetAlbum ||
-          itemUrls.some((u: string) => String(u).toLowerCase().includes(`/album/${targetAlbum}`))
-        );
-      });
+    // Deduplicate combined records by canonical asset key
+    const seenAssetKeys = new Set<string>();
+    const deduplicatedCombined: any[] = [];
+    for (const item of combined) {
+      const urls = Array.isArray(item.fileUrl)
+        ? item.fileUrl
+        : typeof item.fileUrl === 'string' && item.fileUrl.trim()
+        ? [item.fileUrl]
+        : [];
+      const primaryUrl = urls[0] || (item as any).url || '';
+      const key = getCanonicalAssetKey(primaryUrl);
+      if (key && seenAssetKeys.has(key)) {
+        continue;
+      }
+      if (key) seenAssetKeys.add(key);
+      deduplicatedCombined.push(item);
     }
+    combined = deduplicatedCombined;
 
-    // 6a. Apply case-insensitive eventType filter
+    // 6. Apply case-insensitive eventType filter
     if (activeEventType && activeEventType.toLowerCase() !== 'all') {
       combined = combined.filter((item: any) => {
         const itemType = String(item.eventType || '').trim().toLowerCase();
@@ -291,11 +376,18 @@ export class GalleryService {
 
     // 6b. Apply case-insensitive directory filter
     if (activeDirectory && activeDirectory.toLowerCase() !== 'all') {
-      const targetDir = activeDirectory.trim().toLowerCase();
+      const targetDir = activeDirectory.trim().toLowerCase().replace(/^\/+|\/+$/g, '');
       combined = combined.filter((item: any) => {
-        const itemDir = String(item.directoryName || item.directory || '').trim().toLowerCase();
-        const itemUrls = Array.isArray(item.fileUrl) ? item.fileUrl : [item.fileUrl];
-        return itemDir.includes(targetDir) || targetDir.includes(itemDir) || itemUrls.some((u: string) => String(u).toLowerCase().includes(targetDir));
+        const itemDir = String(item.directoryName || item.directory || '').trim().toLowerCase().replace(/^\/+|\/+$/g, '');
+        if (!itemDir) return false;
+
+        if (targetDir === 'album') {
+          // Strictly ONLY show records whose directory name includes 'album'
+          return itemDir === 'album' || itemDir.startsWith('album/') || itemDir.includes('album');
+        }
+
+        // For specific directory paths (e.g. 'album/events', 'others', 'documents/general')
+        return itemDir === targetDir || itemDir.startsWith(`${targetDir}/`) || itemDir.endsWith(`/${targetDir}`);
       });
     }
 
@@ -360,10 +452,52 @@ export class GalleryService {
       const found = cdnResources.find((r: any) => r.id === rawId || r.url.includes(rawId));
       if (found) {
         const rawCat = found.category || 'General';
-        const isOthers = rawCat.toLowerCase() === 'others' || rawCat.toLowerCase().includes('visual editor');
-        const albumName = isOthers ? 'Others' : extractAlbumName(undefined, rawCat, rawCat);
-        const eventType = isOthers ? 'Others' : albumName;
-        const directory = isOthers ? 'Others' : (rawCat.toLowerCase().startsWith('album/') ? rawCat : `Album/${albumName}`);
+        const lowerCat = rawCat.toLowerCase();
+        const lowerUrl = (found.url || '').toLowerCase();
+        const isOthers = lowerCat === 'others' || lowerCat === 'other' || lowerCat.includes('visual editor') || lowerUrl.includes('/others/');
+        const isAlbum = lowerCat.startsWith('album/') || lowerCat === 'album' || lowerUrl.includes('/album/');
+        let albumName = rawCat;
+        let directory = rawCat;
+        let eventType = rawCat;
+
+        if (isOthers) {
+          albumName = 'Others';
+          directory = 'Others';
+          eventType = 'Others';
+        } else if (lowerCat === 'home' || lowerUrl.includes('/settings/home')) {
+          directory = 'Settings/Home';
+          eventType = 'Home';
+          albumName = 'Home';
+        } else if (lowerCat === 'popupbanner' || lowerUrl.includes('popup')) {
+          directory = 'Others';
+          eventType = 'Others';
+          albumName = 'Others';
+        } else if (lowerCat === 'news' || lowerUrl.includes('/press')) {
+          directory = 'PressRelease';
+          eventType = 'PressRelease';
+          albumName = 'PressRelease';
+        } else if (lowerCat === 'student' || lowerUrl.includes('/student/')) {
+          directory = 'Student';
+          eventType = 'Student';
+          albumName = 'Student';
+        } else if (lowerCat === 'staff' || lowerUrl.includes('/staff/')) {
+          directory = 'Staff';
+          eventType = 'Staff';
+          albumName = 'Staff';
+        } else if (lowerCat === 'videos' || lowerUrl.includes('/videos/')) {
+          directory = 'Videos';
+          eventType = 'Videos';
+          albumName = 'Videos';
+        } else if (lowerCat.startsWith('documents') || lowerUrl.includes('/documents/')) {
+          directory = lowerCat.includes('admission') ? 'Documents/Admission' : 'Documents/General';
+          eventType = 'Documents';
+          albumName = 'Documents';
+        } else if (isAlbum) {
+          directory = lowerCat.startsWith('album/') ? rawCat : `Album/${rawCat}`;
+          albumName = lowerCat.startsWith('album/') ? rawCat.slice('album/'.length) : rawCat;
+          eventType = albumName;
+        }
+
         return {
           _id: id,
           id,
@@ -380,6 +514,7 @@ export class GalleryService {
     const item = await this.galleryRepository.findById(id);
     if (item) {
       const doc = (item as any).toObject ? (item as any).toObject() : item;
+      doc.directory = inferDirectoryFromItem(doc.directory, doc.fileUrl, doc.album, doc.eventType);
       doc.album = extractAlbumName(doc.album, doc.directory, doc.eventType);
       return doc;
     }

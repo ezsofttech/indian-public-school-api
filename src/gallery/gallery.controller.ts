@@ -31,17 +31,15 @@ export class GalleryController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List gallery items with pagination, album, eventType, and directory filter' })
-  @ApiQuery({ name: 'album', required: false, description: 'Filter gallery by album name' })
+  @ApiOperation({ summary: 'List gallery items with pagination, eventType, and directory filter' })
   @ApiQuery({ name: 'eventType', required: false, description: 'Filter gallery by event type' })
   @ApiQuery({ name: 'directory', required: false, description: 'Filter gallery by directory path' })
   findAll(
     @Query() queryDto: PaginationQueryDto = {},
     @Query('eventType') eventType?: string,
     @Query('directory') directory?: string,
-    @Query('album') album?: string,
   ) {
-    return this.galleryService.findAll(queryDto, eventType, directory, album);
+    return this.galleryService.findAll(queryDto, eventType, directory);
   }
 
   @Get('*')
