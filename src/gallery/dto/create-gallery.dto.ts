@@ -12,12 +12,6 @@ export class CreateGalleryDto {
   @IsNotEmpty()
   eventName: string;
 
-  @ApiPropertyOptional({
-    example: 'Events',
-    enum: GalleryAlbum,
-    default: GalleryAlbum.EVENTS,
-    description: 'Album category name for photo grouping (e.g. Events, Campus, Sports)',
-  })
   @IsOptional()
   @IsString()
   album?: string;

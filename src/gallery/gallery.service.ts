@@ -39,7 +39,7 @@ export function getCanonicalAssetKey(url: string): string {
 }
 
 export function extractAlbumName(album?: string, directory?: string, eventType?: string): string {
-  if (album && album.trim()) {
+  if (album && album.trim() && album.trim().toLowerCase() !== 'album') {
     const a = album.trim();
     if (a.toLowerCase().startsWith('album/')) {
       return a.slice('album/'.length);
@@ -53,15 +53,14 @@ export function extractAlbumName(album?: string, directory?: string, eventType?:
     if (idx !== -1 && parts[idx + 1]) {
       return parts[idx + 1];
     }
-    return 'General';
   }
-  if (dir && !dir.toLowerCase().includes('album')) {
+  if (dir && !dir.toLowerCase().includes('album') && dir.toLowerCase() !== 'album') {
     return dir;
   }
   if (eventType && eventType.trim() && !['general', 'others'].includes(eventType.toLowerCase())) {
     return eventType.trim();
   }
-  return 'General';
+  return 'Events';
 }
 
 export function inferDirectoryFromItem(directory?: string, fileUrl?: string | string[], album?: string, eventType?: string): string {
