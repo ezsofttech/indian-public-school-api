@@ -96,16 +96,36 @@ export class CareerApplicationsService {
   }
 
   async remove(id: string) {
+    const urlsToDelete: string[] = [];
     try {
       const app = await this.careerApplicationRepository.findById(id);
-      if (app && app.resumeUrl) {
-        await this.uploadsService.deleteFileByUrl(app.resumeUrl);
-      }
-      if (app && app.photoUrl) {
-        await this.uploadsService.deleteFileByUrl(app.photoUrl);
+      if (app) {
+        if (app.resumeUrl) urlsToDelete.push(app.resumeUrl);
+        if (app.photoUrl) urlsToDelete.push(app.photoUrl);
+        if (app.customAnswers && typeof app.customAnswers === 'object') {
+          for (const val of Object.values(app.customAnswers)) {
+            if (typeof val === 'string' && (val.includes('res.cloudinary.com') || val.startsWith('/') || val.includes('/assets/'))) {
+              urlsToDelete.push(val);
+            }
+          }
+        }
       }
     } catch (err) {
-      this.logger.warn(`Could not cleanup resume for application ${id}: ${err}`);
+      this.logger.warn(`Could not find career application ${id} before deletion: ${err}`);
+    }
+
+    if (urlsToDelete.length > 0) {
+      if (this.eventEmitter) {
+        this.eventEmitter.emit('media.cleanup', {
+          urls: urlsToDelete,
+          recordType: 'career_application',
+          recordId: id,
+        });
+      }
+
+      await Promise.allSettled(
+        urlsToDelete.map((url) => this.uploadsService.deleteFileByUrl(url)),
+      );
     }
 
     return this.careerApplicationRepository.delete(id);

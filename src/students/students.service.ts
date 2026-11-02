@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { StudentRepository } from './student.repository';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
@@ -12,6 +13,7 @@ export class StudentsService {
   constructor(
     private readonly studentRepository: StudentRepository,
     private readonly uploadsService: UploadsService,
+    @Optional() private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   async create(createStudentDto: CreateStudentDto) {
@@ -47,20 +49,36 @@ export class StudentsService {
   }
 
   async remove(id: string) {
+    const urlsToDelete: string[] = [];
     try {
       const student = await this.studentRepository.findById(id);
       if (student) {
-        if (student.avatar) await this.uploadsService.deleteFileByUrl(student.avatar);
+        if (student.avatar) urlsToDelete.push(student.avatar);
         if (student.document) {
           const docs = Array.isArray(student.document) ? student.document : [student.document];
           for (const doc of docs) {
-            if (doc) await this.uploadsService.deleteFileByUrl(doc);
+            if (doc) urlsToDelete.push(doc);
           }
         }
       }
     } catch (err) {
-      this.logger.warn(`Could not cleanup media files for student ${id}: ${err}`);
+      this.logger.warn(`Could not find student ${id} before deletion: ${err}`);
     }
+
+    if (urlsToDelete.length > 0) {
+      if (this.eventEmitter) {
+        this.eventEmitter.emit('media.cleanup', {
+          urls: urlsToDelete,
+          recordType: 'student',
+          recordId: id,
+        });
+      }
+
+      await Promise.allSettled(
+        urlsToDelete.map((url) => this.uploadsService.deleteFileByUrl(url)),
+      );
+    }
+
     return this.studentRepository.delete(id);
   }
 }

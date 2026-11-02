@@ -1,4 +1,5 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CareerPostRepository } from '../repositories/career-post.repository';
 import { CreateCareerPostDto } from '../dto/create-career-post.dto';
 import { UpdateCareerPostDto } from '../dto/update-career-post.dto';
@@ -12,6 +13,7 @@ export class CareerPostsService {
   constructor(
     private readonly careerPostRepository: CareerPostRepository,
     private readonly uploadsService: UploadsService,
+    @Optional() private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   async create(createCareerPostDto: CreateCareerPostDto) {
@@ -39,15 +41,10 @@ export class CareerPostsService {
   }
 
   async remove(id: string) {
-    try {
-      const post = await this.careerPostRepository.findById(id);
-      if (post && post.image) {
-        await this.uploadsService.deleteFileByUrl(post.image);
-      }
-    } catch (err) {
-      this.logger.warn(`Failed to cleanup post image for ${id}: ${err}`);
-    }
-
+    // Note: Career post images can be shared media assets chosen from the Cloudinary gallery
+    // or static icons used across multiple openings and site pages.
+    // We strictly do NOT delete the underlying image file from Cloudinary on post deletion
+    // to prevent breaking other posts or pages reusing the same image.
     return this.careerPostRepository.delete(id);
   }
 }

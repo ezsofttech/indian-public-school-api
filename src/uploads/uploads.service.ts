@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -33,11 +34,52 @@ export class UploadsService {
     }
   }
 
+  @OnEvent('media.cleanup')
+  @OnEvent('record.deleted')
+  async handleMediaCleanupEvent(payload: {
+    urls?: string[];
+    mediaUrls?: string[];
+    recordType?: string;
+    recordId?: string;
+  }) {
+    const urls = Array.isArray(payload?.urls)
+      ? payload.urls
+      : Array.isArray(payload?.mediaUrls)
+      ? payload.mediaUrls
+      : [];
+
+    if (urls.length === 0) return;
+
+    this.logger.log(
+      `Received cleanup event for ${payload?.recordType || 'record'} ${payload?.recordId || ''} with ${urls.length} files`,
+    );
+
+    for (const rawUrl of urls) {
+      if (rawUrl && typeof rawUrl === 'string') {
+        try {
+          await this.deleteFileByUrl(rawUrl);
+        } catch (err: any) {
+          this.logger.warn(`Failed to cleanup media file ${rawUrl} via event: ${err?.message || err}`);
+        }
+      }
+    }
+  }
+
   async deleteFileByUrl(url: string): Promise<boolean> {
     if (!url || typeof url !== 'string') return false;
 
     await this.invalidateCloudinaryCache();
 
+    // 1. Clean up from Gallery repository (galleries collection)
+    try {
+      if (this.galleryRepository?.cleanupFileUrl) {
+        await this.galleryRepository.cleanupFileUrl(url);
+      }
+    } catch (gErr: any) {
+      this.logger.warn(`Failed to cleanup gallery DB record for ${url}: ${gErr?.message || gErr}`);
+    }
+
+    // 2. Clean up from Storage Strategy (Cloudinary or Local)
     const provider = this.configService.get<string>('STORAGE_PROVIDER', 'cloudinary');
 
     if (provider === 'cloudinary') {

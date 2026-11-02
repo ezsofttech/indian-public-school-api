@@ -244,18 +244,37 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
         .replace(/^https?:\/\/[^\/]+\/(?:raw|image|video)\/upload\/(?:v\d+\/)?/, '')
         .replace(/^\/+/, '');
 
-      const keyWithoutExt = cleanKey.replace(/\.[a-zA-Z0-9]+$/, '');
-      const keyWithRoot = cleanKey.toLowerCase().startsWith(rootFolder.toLowerCase())
-        ? cleanKey
-        : `${rootFolder}/${cleanKey}`;
-      const keyWithRootWithoutExt = keyWithRoot.replace(/\.[a-zA-Z0-9]+$/, '');
+      const rootClean = (rootFolder || 'ips-education').replace(/^\/+|\/+$/g, '');
+      const rootWithoutAssets = rootClean.replace(/\/+assets$/i, '');
+      const rootWithAssets = rootClean.toLowerCase().endsWith('/assets')
+        ? rootClean
+        : `${rootClean}/assets`;
 
-      const candidateKeys = Array.from(new Set([
+      const strippedClean = cleanKey
+        .replace(new RegExp(`^${rootClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/`, 'i'), '')
+        .replace(new RegExp(`^${rootWithAssets.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/`, 'i'), '')
+        .replace(new RegExp(`^${rootWithoutAssets.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/`, 'i'), '')
+        .replace(/^assets\//i, '');
+
+      const baseVariants = [
         cleanKey,
-        keyWithRoot,
-        keyWithoutExt,
-        keyWithRootWithoutExt,
-      ])).filter(Boolean);
+        strippedClean,
+        `${rootClean}/${strippedClean}`,
+        `${rootWithAssets}/${strippedClean}`,
+        `${rootWithoutAssets}/${strippedClean}`,
+        `assets/${strippedClean}`,
+      ];
+
+      const candidateKeys: string[] = [];
+      for (const v of baseVariants) {
+        if (!v) continue;
+        const normalized = v.replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
+        const withoutExt = normalized.replace(/\.[a-zA-Z0-9]+$/, '');
+        candidateKeys.push(normalized);
+        candidateKeys.push(withoutExt);
+      }
+
+      const uniqueCandidateKeys = Array.from(new Set(candidateKeys)).filter(Boolean);
 
       const primaryConfig = {
         cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
@@ -281,7 +300,7 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
         if (!cfg.cloud_name || !cfg.api_key || !cfg.api_secret) continue;
         cloudinary.config(cfg);
 
-        for (const candidate of candidateKeys) {
+        for (const candidate of uniqueCandidateKeys) {
           const hasRawExt = /\.(pdf|docx?|xlsx?|zip|rar|pptx?|txt|csv)$/i.test(candidate);
           const resourceTypes: Array<'raw' | 'image' | 'video'> = hasRawExt
             ? ['raw', 'image', 'video']
@@ -290,7 +309,7 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
           for (const rt of resourceTypes) {
             try {
               const res = await cloudinary.uploader.destroy(candidate, { resource_type: rt });
-              if (res && res.result === 'ok') {
+              if (res && (res.result === 'ok' || res.result === 'deleted')) {
                 this.logger.log(`Cloudinary asset destroyed successfully: [${cfg.cloud_name}] ${candidate} (${rt})`);
                 anyDeleted = true;
                 break;
