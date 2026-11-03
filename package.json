@@ -17,6 +17,7 @@
     "db:restore": "node scripts/db-restore.js",
     "assets:migrate": "node scripts/assets-migrate.js",
     "assets:cleanup": "node scripts/assets-cleanup.js",
+    "root:cleanup": "node scripts/root-cleanup.js",
     "db:seed": "node scripts/db-seed.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
