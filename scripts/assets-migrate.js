@@ -37,7 +37,9 @@ function collectFiles(dir) {
 
 function getResourceType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
-  if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'].includes(ext)) return 'image';
+  // PDFs are uploaded as image resources so Cloudinary can deliver them inline
+  // and generate page previews consistently with files uploaded through the API.
+  if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg', '.pdf'].includes(ext)) return 'image';
   if (['.mp4', '.webm', '.mov', '.avi'].includes(ext)) return 'video';
   return 'raw';
 }

@@ -6,9 +6,11 @@ import { ConfigService } from '@nestjs/config';
 export function getCloudinaryCloudBaseUrl(configService?: ConfigService): string {
   const cloudName =
     configService?.get<string>('CLOUDINARY_CLOUD_NAME') ||
-    process.env.CLOUDINARY_CLOUD_NAME ||
-    'dnw7mgysa';
+    process.env.CLOUDINARY_CLOUD_NAME;
 
+  if (!cloudName?.trim()) {
+    throw new Error('CLOUDINARY_CLOUD_NAME is required to build Cloudinary media URLs');
+  }
   return `https://res.cloudinary.com/${cloudName.trim()}`;
 }
 

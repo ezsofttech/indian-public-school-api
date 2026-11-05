@@ -284,16 +284,6 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
 
       const configs = [primaryConfig];
 
-      // Cross-cloud deletion fallback to ensure legacy files (dnw7mgysa <-> niefrrkx) are properly cleaned up
-      const secondaryName = primaryConfig.cloud_name === 'dnw7mgysa' ? 'niefrrkx' : 'dnw7mgysa';
-      const secondaryKey = secondaryName === 'niefrrkx' ? '439722964466118' : '727794366589874';
-      const secondarySecret = secondaryName === 'niefrrkx' ? 'kbxe8cBJ5eA-ohuWOO9_hAKgQGE' : 'oIZ3h6dnPsNzqW5UZiMhRn_7vlQ';
-      configs.push({
-        cloud_name: secondaryName,
-        api_key: secondaryKey,
-        api_secret: secondarySecret,
-      });
-
       let anyDeleted = false;
 
       for (const cfg of configs) {
@@ -487,4 +477,3 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
     }
   }
 }
-
