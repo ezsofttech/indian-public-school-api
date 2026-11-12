@@ -108,7 +108,7 @@ export class GalleryService {
     private readonly cacheManager: Cache,
   ) {}
 
-  private async invalidateGalleryCache() {
+  public async invalidateGalleryCache() {
     try {
       for (const key of this.cacheKeys) {
         await this.cacheManager.del(key);
@@ -117,56 +117,63 @@ export class GalleryService {
     } catch {
       // ignore
     }
+    try {
+      await this.uploadsService.invalidateCloudinaryCache();
+    } catch {
+      // ignore
+    }
   }
 
   async create(createGalleryDto: CreateGalleryDto) {
-    if (createGalleryDto.eventName) {
-      createGalleryDto.eventName = formatPrettyEventName(createGalleryDto.eventName);
-    }
-    if (!createGalleryDto.album) {
-      createGalleryDto.album = extractAlbumName(undefined, createGalleryDto.directory, createGalleryDto.eventType);
-    }
-    if (!createGalleryDto.directory || createGalleryDto.directory === '/album/General') {
-      const alb = createGalleryDto.album || 'Events';
-      createGalleryDto.directory = alb.toLowerCase() === 'others' ? 'Others' : `Album/${alb}`;
-    }
-    if (Array.isArray(createGalleryDto.fileUrl)) {
-      createGalleryDto.fileUrl = createGalleryDto.fileUrl.map(u => cleanAssetPath(u));
-    }
-    if ((createGalleryDto as any).url) {
-      (createGalleryDto as any).url = cleanAssetPath((createGalleryDto as any).url);
-    }
-    if (createGalleryDto.fileUrl && createGalleryDto.fileUrl.length > 0) {
-      const searchUrls = new Set<string>();
-      for (const u of createGalleryDto.fileUrl) {
-        if (!u) continue;
-        searchUrls.add(u);
-        const cleaned = cleanAssetPath(u);
-        searchUrls.add(cleaned);
-        try {
-          searchUrls.add(decodeURIComponent(cleaned));
-          searchUrls.add(decodeURIComponent(u));
-          searchUrls.add(encodeURI(cleaned));
-        } catch {}
+    try {
+      if (createGalleryDto.eventName) {
+        createGalleryDto.eventName = formatPrettyEventName(createGalleryDto.eventName);
       }
+      if (!createGalleryDto.album) {
+        createGalleryDto.album = extractAlbumName(undefined, createGalleryDto.directory, createGalleryDto.eventType);
+      }
+      if (!createGalleryDto.directory || createGalleryDto.directory === '/album/General') {
+        const alb = createGalleryDto.album || 'Events';
+        createGalleryDto.directory = alb.toLowerCase() === 'others' ? 'Others' : `Album/${alb}`;
+      }
+      if (Array.isArray(createGalleryDto.fileUrl)) {
+        createGalleryDto.fileUrl = createGalleryDto.fileUrl.map(u => cleanAssetPath(u));
+      }
+      if ((createGalleryDto as any).url) {
+        (createGalleryDto as any).url = cleanAssetPath((createGalleryDto as any).url);
+      }
+      if (createGalleryDto.fileUrl && createGalleryDto.fileUrl.length > 0) {
+        const searchUrls = new Set<string>();
+        for (const u of createGalleryDto.fileUrl) {
+          if (!u) continue;
+          searchUrls.add(u);
+          const cleaned = cleanAssetPath(u);
+          searchUrls.add(cleaned);
+          try {
+            searchUrls.add(decodeURIComponent(cleaned));
+            searchUrls.add(decodeURIComponent(u));
+            searchUrls.add(encodeURI(cleaned));
+          } catch {}
+        }
 
-      const existing = await this.galleryRepository.findAll(
-        { page: 1, limit: 10 },
-        [],
-        { fileUrl: { $in: Array.from(searchUrls) } },
-      );
-      const items = existing.items || (existing as any).data || [];
-      if (items.length > 0) {
-        const docId = (items[0] as any)._id || (items[0] as any).id;
-        this.logger.log(`Existing gallery document found for fileUrl (${String(docId)}). Updating instead of creating duplicate.`);
-        const res = await this.galleryRepository.update(String(docId), createGalleryDto);
-        await this.invalidateGalleryCache();
-        return res;
+        const existing = await this.galleryRepository.findAll(
+          { page: 1, limit: 10 },
+          [],
+          { fileUrl: { $in: Array.from(searchUrls) } },
+        );
+        const items = existing.items || (existing as any).data || [];
+        if (items.length > 0) {
+          const docId = (items[0] as any)._id || (items[0] as any).id;
+          this.logger.log(`Existing gallery document found for fileUrl (${String(docId)}). Updating instead of creating duplicate.`);
+          const res = await this.galleryRepository.update(String(docId), createGalleryDto);
+          return res;
+        }
       }
+      const created = await this.galleryRepository.create(createGalleryDto);
+      return created;
+    } finally {
+      await this.invalidateGalleryCache();
     }
-    const created = await this.galleryRepository.create(createGalleryDto);
-    await this.invalidateGalleryCache();
-    return created;
   }
 
   async findAll(queryDto: PaginationQueryDto = {}, eventType?: string, directory?: string) {
@@ -521,106 +528,122 @@ export class GalleryService {
   }
 
   async update(id: string, updateGalleryDto: UpdateGalleryDto) {
-    if (updateGalleryDto.eventName) {
-      updateGalleryDto.eventName = formatPrettyEventName(updateGalleryDto.eventName);
-    }
-    if (!updateGalleryDto.album && (updateGalleryDto.directory || updateGalleryDto.eventType)) {
-      updateGalleryDto.album = extractAlbumName(undefined, updateGalleryDto.directory, updateGalleryDto.eventType);
-    }
-    if (updateGalleryDto.album && (!updateGalleryDto.directory || updateGalleryDto.directory === '/album/General')) {
-      const alb = updateGalleryDto.album;
-      updateGalleryDto.directory = alb.toLowerCase() === 'others' ? 'Others' : `Album/${alb}`;
-    }
-    if (Array.isArray(updateGalleryDto.fileUrl)) {
-      updateGalleryDto.fileUrl = updateGalleryDto.fileUrl.map(u => cleanAssetPath(u));
-    }
-    if ((updateGalleryDto as any).url) {
-      (updateGalleryDto as any).url = cleanAssetPath((updateGalleryDto as any).url);
-    }
-    if (id.startsWith('cdn-')) {
-      // Upsert into MongoDB so updates/metadata changes persist
-      const rawAlbum = updateGalleryDto.album || extractAlbumName(undefined, updateGalleryDto.directory, updateGalleryDto.eventType);
-      const isOthers = rawAlbum.toLowerCase() === 'others' || (updateGalleryDto.eventType || '').toLowerCase().includes('visual editor');
-      const defaultDir = isOthers ? 'Others' : `Album/${rawAlbum}`;
-      const created = await this.galleryRepository.create({
-        eventName: updateGalleryDto.eventName || (isOthers ? 'Others Asset' : 'Cloudinary Asset'),
-        album: isOthers ? 'Others' : rawAlbum,
-        eventType: isOthers ? 'Others' : (updateGalleryDto.eventType || rawAlbum),
-        directory: updateGalleryDto.directory || defaultDir,
-        fileUrl: updateGalleryDto.fileUrl || [],
-        mimeType: updateGalleryDto.mimeType,
-      });
-      await this.invalidateGalleryCache();
-      return created;
-    }
-
     try {
-      if (updateGalleryDto.fileUrl && Array.isArray(updateGalleryDto.fileUrl)) {
-        const existing = await this.galleryRepository.findById(id);
-        if (existing && Array.isArray(existing.fileUrl)) {
-          const newUrls = new Set(updateGalleryDto.fileUrl);
-          const removedUrls = existing.fileUrl.filter((url) => !newUrls.has(url));
-          for (const url of removedUrls) {
-            await this.uploadsService.deleteFileByUrl(url);
+      if (updateGalleryDto.eventName) {
+        updateGalleryDto.eventName = formatPrettyEventName(updateGalleryDto.eventName);
+      }
+      if (!updateGalleryDto.album && (updateGalleryDto.directory || updateGalleryDto.eventType)) {
+        updateGalleryDto.album = extractAlbumName(undefined, updateGalleryDto.directory, updateGalleryDto.eventType);
+      }
+      if (updateGalleryDto.album && (!updateGalleryDto.directory || updateGalleryDto.directory === '/album/General')) {
+        const alb = updateGalleryDto.album;
+        updateGalleryDto.directory = alb.toLowerCase() === 'others' ? 'Others' : `Album/${alb}`;
+      }
+      if (Array.isArray(updateGalleryDto.fileUrl)) {
+        updateGalleryDto.fileUrl = updateGalleryDto.fileUrl.map(u => cleanAssetPath(u));
+      }
+      if ((updateGalleryDto as any).url) {
+        (updateGalleryDto as any).url = cleanAssetPath((updateGalleryDto as any).url);
+      }
+      if (id.startsWith('cdn-')) {
+        // Upsert into MongoDB so updates/metadata changes persist
+        const rawAlbum = updateGalleryDto.album || extractAlbumName(undefined, updateGalleryDto.directory, updateGalleryDto.eventType);
+        const isOthers = rawAlbum.toLowerCase() === 'others' || (updateGalleryDto.eventType || '').toLowerCase().includes('visual editor');
+        const defaultDir = isOthers ? 'Others' : `Album/${rawAlbum}`;
+        const created = await this.galleryRepository.create({
+          eventName: updateGalleryDto.eventName || (isOthers ? 'Others Asset' : 'Cloudinary Asset'),
+          album: isOthers ? 'Others' : rawAlbum,
+          eventType: isOthers ? 'Others' : (updateGalleryDto.eventType || rawAlbum),
+          directory: updateGalleryDto.directory || defaultDir,
+          fileUrl: updateGalleryDto.fileUrl || [],
+          mimeType: updateGalleryDto.mimeType,
+        });
+        return created;
+      }
+
+      try {
+        if (updateGalleryDto.fileUrl && Array.isArray(updateGalleryDto.fileUrl)) {
+          const existing = await this.galleryRepository.findById(id);
+          if (existing && Array.isArray(existing.fileUrl)) {
+            const newUrls = new Set(updateGalleryDto.fileUrl);
+            const removedUrls = existing.fileUrl.filter((url) => !newUrls.has(url));
+            for (const url of removedUrls) {
+              await this.uploadsService.deleteFileByUrl(url, true);
+            }
           }
         }
+      } catch (err) {
+        this.logger.warn(`Could not perform Cloudinary cleanup on update for ${id}: ${err}`);
       }
-    } catch (err) {
-      this.logger.warn(`Could not perform Cloudinary cleanup on update for ${id}: ${err}`);
-    }
 
-    const updated = await this.galleryRepository.update(id, updateGalleryDto);
-    await this.invalidateGalleryCache();
-    return updated;
+      const updated = await this.galleryRepository.update(id, updateGalleryDto);
+      return updated;
+    } finally {
+      await this.invalidateGalleryCache();
+    }
   }
 
   async remove(id: string) {
-    // If id is a cdn- ID or direct Cloudinary key/URL
-    if (id.startsWith('cdn-') || id.includes('http') || id.includes('/')) {
-      let targetUrl = id.replace(/^cdn-/, '');
-      const filename = targetUrl.split('/').pop() || '';
-
-      // Check if DB record exists for this item
-      const searchConditions: any[] = [{ fileUrl: targetUrl }, { fileUrl: `/${targetUrl}` }];
-      if (filename) {
-        searchConditions.push({ fileUrl: { $regex: filename, $options: 'i' } });
-      }
-
-      const existing = await this.galleryRepository.findAll(
-        { page: 1, limit: 10 },
-        [],
-        { $or: searchConditions },
-      );
-      const items = existing.items || (existing as any).data || [];
-
-      for (const doc of items) {
-        const docId = (doc as any)._id || (doc as any).id;
-        if (docId) {
-          await this.galleryRepository.delete(String(docId));
-        }
-      }
-
-      // Delete directly from Cloudinary CDN storage
-      await this.uploadsService.deleteFileByUrl(targetUrl);
-      await this.invalidateGalleryCache();
-      return { deleted: true, id };
-    }
-
-    // Standard MongoDB ObjectId removal
     try {
-      const existing = await this.galleryRepository.findById(id);
-      if (existing && Array.isArray(existing.fileUrl)) {
-        for (const url of existing.fileUrl) {
-          await this.uploadsService.deleteFileByUrl(url);
-        }
-      }
-    } catch (err) {
-      this.logger.warn(`Could not perform Cloudinary cleanup on delete for ${id}: ${err}`);
-    }
+      // If id is a cdn- ID or direct Cloudinary key/URL
+      if (id.startsWith('cdn-') || id.includes('http') || id.includes('/')) {
+        let targetUrl = id.replace(/^cdn-/, '');
+        const filename = targetUrl.split('/').pop() || '';
 
-    const deleted = await this.galleryRepository.delete(id);
-    await this.invalidateGalleryCache();
-    return deleted;
+        // Check if DB record exists for this item
+        const searchConditions: any[] = [{ fileUrl: targetUrl }, { fileUrl: `/${targetUrl}` }];
+        if (filename) {
+          searchConditions.push({ fileUrl: { $regex: filename, $options: 'i' } });
+        }
+
+        const existing = await this.galleryRepository.findAll(
+          { page: 1, limit: 10 },
+          [],
+          { $or: searchConditions },
+        );
+        const items = existing.items || (existing as any).data || [];
+
+        for (const doc of items) {
+          const docId = (doc as any)._id || (doc as any).id;
+          if (docId) {
+            try {
+              await this.galleryRepository.delete(String(docId));
+            } catch {}
+          }
+        }
+
+        // Delete directly from Cloudinary CDN storage (skip duplicate gallery cleanup)
+        await this.uploadsService.deleteFileByUrl(targetUrl, true);
+        return { deleted: true, id };
+      }
+
+      // Standard MongoDB ObjectId / publicId removal
+      try {
+        const existing = await this.galleryRepository.findById(id);
+        if (existing && Array.isArray(existing.fileUrl)) {
+          for (const url of existing.fileUrl) {
+            // Pass skipGalleryCleanup = true so uploadsService does NOT delete the document before we do!
+            await this.uploadsService.deleteFileByUrl(url, true);
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`Could not perform Cloudinary cleanup on delete for ${id}: ${err}`);
+      }
+
+      try {
+        const deleted = await this.galleryRepository.delete(id);
+        return deleted;
+      } catch (err: any) {
+        // If it was already deleted concurrently or by another process, treat as success
+        if (err?.status === 404 || err?.name === 'NotFoundException' || String(err?.message || '').includes('not found')) {
+          return { deleted: true, id };
+        }
+        throw err;
+      }
+    } finally {
+      // ALWAYS invalidate related gallery and uploads caches on ANY delete!
+      await this.invalidateGalleryCache();
+    }
   }
 }
 

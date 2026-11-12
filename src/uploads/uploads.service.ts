@@ -25,10 +25,11 @@ export class UploadsService {
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
-  private async invalidateCloudinaryCache() {
+  public async invalidateCloudinaryCache() {
     try {
       await this.cacheManager.del('cloudinary_resources_root');
       await this.cacheManager.del('cloudinary_resources_all');
+      await this.cacheManager.del('storage_usage_summary');
     } catch {
       // ignore
     }
@@ -65,18 +66,20 @@ export class UploadsService {
     }
   }
 
-  async deleteFileByUrl(url: string): Promise<boolean> {
+  async deleteFileByUrl(url: string, skipGalleryCleanup = false): Promise<boolean> {
     if (!url || typeof url !== 'string') return false;
 
     await this.invalidateCloudinaryCache();
 
-    // 1. Clean up from Gallery repository (galleries collection)
-    try {
-      if (this.galleryRepository?.cleanupFileUrl) {
-        await this.galleryRepository.cleanupFileUrl(url);
+    // 1. Clean up from Gallery repository (galleries collection) only if not skipped
+    if (!skipGalleryCleanup) {
+      try {
+        if (this.galleryRepository?.cleanupFileUrl) {
+          await this.galleryRepository.cleanupFileUrl(url);
+        }
+      } catch (gErr: any) {
+        this.logger.warn(`Failed to cleanup gallery DB record for ${url}: ${gErr?.message || gErr}`);
       }
-    } catch (gErr: any) {
-      this.logger.warn(`Failed to cleanup gallery DB record for ${url}: ${gErr?.message || gErr}`);
     }
 
     // 2. Clean up from Storage Strategy (Cloudinary or Local)
@@ -266,41 +269,52 @@ export class UploadsService {
   }
 
   async remove(id: string) {
-    await this.invalidateCloudinaryCache();
-
-    if (id.startsWith('cdn-') || id.includes('http') || id.includes('/')) {
-      let targetUrl = id.replace(/^cdn-/, '');
-
-      const existing = await this.galleryRepository.findAll(
-        { page: 1, limit: 10 },
-        [],
-        { fileUrl: { $in: [targetUrl] } },
-      );
-      const items = existing.items || (existing as any).data || [];
-
-      for (const doc of items) {
-        const docId = (doc as any)._id || (doc as any).id;
-        if (docId) {
-          await this.galleryRepository.delete(String(docId));
-        }
-      }
-
-      await this.deleteFileByUrl(targetUrl);
-      return { deleted: true, id };
-    }
-
     try {
-      const asset = await this.galleryRepository.findById(id);
-      if (asset && Array.isArray(asset.fileUrl)) {
-        for (const url of asset.fileUrl) {
-          await this.deleteFileByUrl(url);
-        }
-      }
-    } catch (err) {
-      this.logger.warn(`Could not fetch asset ${id} for Cloudinary deletion prior to database removal: ${err}`);
-    }
+      if (id.startsWith('cdn-') || id.includes('http') || id.includes('/')) {
+        let targetUrl = id.replace(/^cdn-/, '');
 
-    return this.galleryRepository.delete(id);
+        const existing = await this.galleryRepository.findAll(
+          { page: 1, limit: 10 },
+          [],
+          { fileUrl: { $in: [targetUrl] } },
+        );
+        const items = existing.items || (existing as any).data || [];
+
+        for (const doc of items) {
+          const docId = (doc as any)._id || (doc as any).id;
+          if (docId) {
+            try {
+              await this.galleryRepository.delete(String(docId));
+            } catch {}
+          }
+        }
+
+        await this.deleteFileByUrl(targetUrl, true);
+        return { deleted: true, id };
+      }
+
+      try {
+        const asset = await this.galleryRepository.findById(id);
+        if (asset && Array.isArray(asset.fileUrl)) {
+          for (const url of asset.fileUrl) {
+            await this.deleteFileByUrl(url, true);
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`Could not fetch asset ${id} for Cloudinary deletion prior to database removal: ${err}`);
+      }
+
+      try {
+        return await this.galleryRepository.delete(id);
+      } catch (err: any) {
+        if (err?.status === 404 || err?.name === 'NotFoundException') {
+          return { deleted: true, id };
+        }
+        throw err;
+      }
+    } finally {
+      await this.invalidateCloudinaryCache();
+    }
   }
 
   async getCloudinaryResources(folder?: string) {
