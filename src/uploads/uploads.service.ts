@@ -10,6 +10,7 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { extractCloudinaryPublicId, formatFileSizeErrorMessage, formatBytes } from './utils/cloudinary-helper';
 import { FileCompressorService } from './services/file-compressor.service';
 import { toRelativeMediaPath, getCloudinaryRootFolder } from '../common/config';
+import { MulterFile } from '../common/interfaces/multer.interface';
 
 @Injectable()
 export class UploadsService {
@@ -103,7 +104,7 @@ export class UploadsService {
     return false;
   }
 
-  async upload(file: Express.Multer.File, album: string = 'General', altText?: string, folder?: string) {
+  async upload(file: MulterFile, album: string = 'General', altText?: string, folder?: string) {
     if (!file || !file.buffer) {
       throw new BadRequestException('No file or empty file buffer provided');
     }

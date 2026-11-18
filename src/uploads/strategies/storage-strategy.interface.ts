@@ -1,4 +1,4 @@
-import { Express } from 'express';
+import { MulterFile } from '../../common/interfaces/multer.interface';
 
 export interface UploadResult {
   url: string;
@@ -8,6 +8,6 @@ export interface UploadResult {
 }
 
 export interface IStorageStrategy {
-  uploadFile(file: Express.Multer.File, folder?: string): Promise<UploadResult>;
+  uploadFile(file: MulterFile, folder?: string): Promise<UploadResult>;
   deleteFile(key: string): Promise<boolean>;
 }

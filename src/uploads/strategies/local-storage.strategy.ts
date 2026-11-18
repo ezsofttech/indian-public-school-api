@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IStorageStrategy, UploadResult } from './storage-strategy.interface';
+import { MulterFile } from '../../common/interfaces/multer.interface';
 
 @Injectable()
 export class LocalStorageStrategy implements IStorageStrategy {
@@ -14,7 +15,7 @@ export class LocalStorageStrategy implements IStorageStrategy {
     }
   }
 
-  async uploadFile(file: Express.Multer.File, folder?: string): Promise<UploadResult> {
+  async uploadFile(file: MulterFile, folder?: string): Promise<UploadResult> {
     const filename = `${Date.now()}-${file.originalname.replace(/\s+/g, '-')}`;
     const filePath = path.join(this.uploadDir, filename);
 
