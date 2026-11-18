@@ -52,28 +52,29 @@ async function bootstrap() {
     ],
   });
 
-  // Swagger Documentation Setup
-  const config = new DocumentBuilder()
-    .setTitle('Indian Public School API')
-    .setDescription('RESTful API documentation for Indian Public School management system')
-    .setVersion('1.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        name: 'Authorization',
-        description: 'Enter JWT token',
-        in: 'header',
-      },
-      'JWT-auth',
-    )
-    .build();
+  if (process.env.ENABLE_SWAGGER === 'true') {
+    const config = new DocumentBuilder()
+      .setTitle('Indian Public School API')
+      .setDescription('RESTful API documentation for Indian Public School management system')
+      .setVersion('1.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'Authorization',
+          description: 'Enter JWT token',
+          in: 'header',
+        },
+        'JWT-auth',
+      )
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document, {
-    customSiteTitle: 'IPS API Documentation',
-  });
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('docs', app, document, {
+      customSiteTitle: 'IPS API Documentation',
+    });
+  }
 
   // Browsers request this automatically; keep it out of the API 404 handler.
   app.use('/favicon.ico', (_req, res) => res.status(204).end());
