@@ -17,13 +17,11 @@ async function bootstrap() {
 
   app.enableCors({
     origin: [
-      'http://192.168.29.92:3000',
-      'http://10.213.10.218:3000',
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:3002',
+      'https://indian-public-school.devs.surf',
       'https://indian-public-school-app.vercel.app',
-      'https://indian-public-school-app-alpha.vercel.app',
       'https://ips-web.ezsoftapp.in',
       'https://api-ips.ezsoftapp.in',
       'http://ips-web.ezsoftapp.in',
