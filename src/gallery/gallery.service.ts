@@ -344,8 +344,8 @@ export class GalleryService {
           fileUrl: [res.url],
           mimeType: res.mimeType || (res.format === 'pdf' ? 'application/pdf' : res.resourceType === 'video' ? `video/${res.format || 'mp4'}` : `image/${res.format || 'jpeg'}`),
           isCdnResource: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          createdAt: res.createdAt ? new Date(res.createdAt) : new Date(0),
+          updatedAt: res.createdAt ? new Date(res.createdAt) : new Date(0),
         });
       }
     });
@@ -422,6 +422,19 @@ export class GalleryService {
 
       if (valA < valB) return sortOrder === 1 ? -1 : 1;
       if (valA > valB) return sortOrder === 1 ? 1 : -1;
+
+      const createdA = a.createdAt instanceof Date
+        ? a.createdAt.getTime()
+        : new Date(a.createdAt || 0).getTime() || 0;
+      const createdB = b.createdAt instanceof Date
+        ? b.createdAt.getTime()
+        : new Date(b.createdAt || 0).getTime() || 0;
+      if (createdA !== createdB) return createdB - createdA;
+
+      const identityA = String(a.publicId || a._id || a.id || (Array.isArray(a.fileUrl) ? a.fileUrl[0] : '') || '').toLowerCase();
+      const identityB = String(b.publicId || b._id || b.id || (Array.isArray(b.fileUrl) ? b.fileUrl[0] : '') || '').toLowerCase();
+      if (identityA < identityB) return -1;
+      if (identityA > identityB) return 1;
       return 0;
     });
 

@@ -7,6 +7,7 @@ import * as path from 'path';
 import { IStorageStrategy, UploadResult } from './storage-strategy.interface';
 import { formatFileSizeErrorMessage } from '../utils/cloudinary-helper';
 import { toRelativeMediaPath, getCloudinaryRootFolder } from '../../common/config';
+import { MulterFile } from '../../common/interfaces/multer.interface';
 
 @Injectable()
 export class CloudinaryStorageStrategy implements IStorageStrategy {
@@ -47,7 +48,7 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
     );
   }
 
-  async uploadFile(file: Express.Multer.File, folder?: string): Promise<UploadResult> {
+  async uploadFile(file: MulterFile, folder?: string): Promise<UploadResult> {
     const rootFolder = getCloudinaryRootFolder(this.configService);
     let resolvedFolder = folder ? folder.trim().replace(/^\/+|\/+$/g, '') : '';
     const rootEndsWithAssets = rootFolder.toLowerCase().endsWith('/assets');
@@ -322,7 +323,7 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
     }
   }
 
-  async listResources(folder?: string): Promise<Array<{ id: string; url: string; title: string; category: string; resourceType: string; format: string }>> {
+  async listResources(folder?: string): Promise<Array<{ id: string; url: string; title: string; category: string; resourceType: string; format: string; createdAt?: string }>> {
     const rootFolder = getCloudinaryRootFolder(this.configService);
     let targetFolder = folder ? folder.trim().replace(/^\/+|\/+$/g, '') : '';
     const rootEndsWithAssets = rootFolder.toLowerCase().endsWith('/assets');
@@ -423,6 +424,7 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
           category,
           resourceType: r.resource_type || 'image',
           format: r.format || '',
+          createdAt: r.created_at || undefined,
         };
       });
 

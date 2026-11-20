@@ -23,6 +23,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import type { MulterFile } from '../common/interfaces/multer.interface';
 import { PublicDisclosureService } from './public-disclosure.service';
 import {
   CreatePublicDisclosureSectionDto,
@@ -133,7 +134,7 @@ export class PublicDisclosureController {
   })
   @UseInterceptors(FileInterceptor('file'))
   uploadDocument(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: MulterFile,
     @Body('sessionId') sessionId?: string,
     @Req() req?: any,
   ) {

@@ -22,6 +22,7 @@ import {
   DisclosureSection,
   DisclosureView,
 } from './interfaces/disclosure.interface';
+import { MulterFile } from '../common/interfaces/multer.interface';
 import {
   CreatePublicDisclosureSectionDto,
   UpdatePublicDisclosureSectionDto,
@@ -531,7 +532,7 @@ export class PublicDisclosureService {
    * Upload a document via the existing UploadsService and track it in event-based fallback.
    */
   async uploadDocument(
-    file: Express.Multer.File,
+    file: MulterFile,
     sessionId?: string,
     user?: any,
   ): Promise<{

@@ -15,21 +15,18 @@ async function bootstrap() {
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 
+  const corsOrigins = process.env.CORS_ORIGINS?.trim();
+  const origin = corsOrigins
+    ? corsOrigins
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : '*';
+  const hasWildcardOrigin = origin === '*' || origin.includes('*');
+
   app.enableCors({
-    origin: [
-      'http://192.168.29.92:3000',
-      'http://10.213.10.218:3000',
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002',
-      'https://indian-public-school-app.vercel.app',
-      'https://indian-public-school-app-alpha.vercel.app',
-      'https://ips-web.ezsoftapp.in',
-      'https://api-ips.ezsoftapp.in',
-      'http://ips-web.ezsoftapp.in',
-      'http://api-ips.ezsoftapp.in'
-    ],
-    credentials: true,
+    origin,
+    credentials: !hasWildcardOrigin,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
@@ -54,28 +51,29 @@ async function bootstrap() {
     ],
   });
 
-  // Swagger Documentation Setup
-  const config = new DocumentBuilder()
-    .setTitle('Indian Public School API')
-    .setDescription('RESTful API documentation for Indian Public School management system')
-    .setVersion('1.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        name: 'Authorization',
-        description: 'Enter JWT token',
-        in: 'header',
-      },
-      'JWT-auth',
-    )
-    .build();
+  if (process.env.ENABLE_SWAGGER === 'true') {
+    const config = new DocumentBuilder()
+      .setTitle('Indian Public School API')
+      .setDescription('RESTful API documentation for Indian Public School management system')
+      .setVersion('1.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'Authorization',
+          description: 'Enter JWT token',
+          in: 'header',
+        },
+        'JWT-auth',
+      )
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document, {
-    customSiteTitle: 'IPS API Documentation',
-  });
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('docs', app, document, {
+      customSiteTitle: 'IPS API Documentation',
+    });
+  }
 
   // Browsers request this automatically; keep it out of the API 404 handler.
   app.use('/favicon.ico', (_req, res) => res.status(204).end());

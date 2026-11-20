@@ -17,6 +17,7 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiTags, ApiConsumes, ApiBody, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { getCloudinaryRootFolder } from '../common/config';
+import type { MulterFile } from '../common/interfaces/multer.interface';
 
 @ApiTags('Uploads')
 @Controller('v1/uploads')
@@ -45,7 +46,7 @@ export class UploadsController {
   })
   @UseInterceptors(FileInterceptor('file'))
   upload(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: MulterFile,
     @Body('album') album?: string,
     @Body('folder') folder?: string,
     @Body('directory') directory?: string,
@@ -60,7 +61,7 @@ export class UploadsController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file'))
   publicUpload(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: MulterFile,
     @Body('album') album?: string,
     @Body('folder') folder?: string,
     @Body('altText') altText?: string,

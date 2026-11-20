@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import sharp from 'sharp';
 import { PDFDocument } from 'pdf-lib';
+import { MulterFile } from '../../common/interfaces/multer.interface';
 
 @Injectable()
 export class FileCompressorService {
@@ -13,7 +14,7 @@ export class FileCompressorService {
    * Flow safety: If compression fails for any reason or yields a larger buffer,
    * it gracefully falls back to the original uncompressed file buffer.
    */
-  async compress(file: Express.Multer.File): Promise<Express.Multer.File> {
+  async compress(file: MulterFile): Promise<MulterFile> {
     if (!file || !file.buffer || file.buffer.length === 0) {
       return file;
     }
@@ -51,7 +52,7 @@ export class FileCompressorService {
           buffer: compressedBuffer,
           size: compressedBuffer.length,
           originalBuffer: file.buffer,
-        } as Express.Multer.File & { originalBuffer?: Buffer };
+        };
       }
 
       this.logger.log(
