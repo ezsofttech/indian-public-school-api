@@ -15,19 +15,18 @@ async function bootstrap() {
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 
+  const corsOrigins = process.env.CORS_ORIGINS?.trim();
+  const origin = corsOrigins
+    ? corsOrigins
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : '*';
+  const hasWildcardOrigin = origin === '*' || origin.includes('*');
+
   app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002',
-      'https://indian-public-school.devs.surf',
-      'https://indian-public-school-app.vercel.app',
-      'https://ips-web.ezsoftapp.in',
-      'https://api-ips.ezsoftapp.in',
-      'http://ips-web.ezsoftapp.in',
-      'http://api-ips.ezsoftapp.in'
-    ],
-    credentials: true,
+    origin,
+    credentials: !hasWildcardOrigin,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
