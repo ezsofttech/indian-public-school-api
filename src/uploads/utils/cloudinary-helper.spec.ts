@@ -2,11 +2,11 @@ import { formatBytes, formatFileSizeErrorMessage } from './cloudinary-helper';
 
 describe('Cloudinary Helper Utilities', () => {
   describe('formatBytes', () => {
-    it('should format raw bytes strictly in MB format', () => {
+    it('should format raw bytes strictly in appropriate units', () => {
       expect(formatBytes(10485760)).toBe('10 MB');
       expect(formatBytes(69974235)).toBe('66.73 MB');
-      expect(formatBytes(524288)).toBe('0.5 MB');
-      expect(formatBytes(1073741824)).toBe('1024 MB');
+      expect(formatBytes(524288)).toBe('512 KB');
+      expect(formatBytes(1073741824)).toBe('1 GB');
     });
   });
 

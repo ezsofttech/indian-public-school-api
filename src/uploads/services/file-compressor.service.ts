@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import sharp from 'sharp';
 import { PDFDocument } from 'pdf-lib';
 import { MulterFile } from '../../common/interfaces/multer.interface';
 
@@ -8,8 +7,8 @@ export class FileCompressorService {
   private readonly logger = new Logger(FileCompressorService.name);
 
   /**
-   * Compresses incoming uploaded files (images, PDFs, videos) visually losslessly
-   * to fit within Cloudinary's 10MB raw/media upload limits.
+   * Compresses incoming uploaded files (PDFs, etc.)
+   * Image compression is offloaded to the frontend before upload.
    *
    * Flow safety: If compression fails for any reason or yields a larger buffer,
    * it gracefully falls back to the original uncompressed file buffer.
@@ -23,18 +22,12 @@ export class FileCompressorService {
     const mimetype = (file.mimetype || '').toLowerCase();
     const filename = file.originalname || 'uploaded_file';
     const isPdf = mimetype === 'application/pdf' || filename.toLowerCase().endsWith('.pdf');
-    const isImage = mimetype.startsWith('image/');
-    const isVideo = mimetype.startsWith('video/');
 
     try {
       let compressedBuffer: Buffer | null = null;
 
-      if (isImage) {
-        compressedBuffer = await this.compressImage(file.buffer, mimetype, filename);
-      } else if (isPdf) {
+      if (isPdf) {
         compressedBuffer = await this.compressPdf(file.buffer, filename);
-      } else if (isVideo) {
-        compressedBuffer = await this.compressVideo(file.buffer, filename);
       }
 
       if (compressedBuffer && compressedBuffer.length > 0 && compressedBuffer.length < originalSize) {
@@ -55,59 +48,12 @@ export class FileCompressorService {
         };
       }
 
-      this.logger.log(
-        `File "${filename}" (${(originalSize / (1024 * 1024)).toFixed(2)} MB) is already optimal or compression did not yield size savings. Retaining original buffer.`,
-      );
       return file;
     } catch (err: any) {
       this.logger.warn(
         `File compression skipped for "${filename}" due to warning: ${err?.message || err}. Proceeding with original file.`,
       );
       return file;
-    }
-  }
-
-  /**
-   * Visually lossless image compression using sharp
-   */
-  private async compressImage(buffer: Buffer, mimetype: string, filename: string): Promise<Buffer> {
-    try {
-      let pipeline = sharp(buffer, { animated: mimetype.includes('gif') });
-      const metadata = await pipeline.metadata();
-
-      // Downscale ultra-high resolution images (> 2560px) while maintaining aspect ratio
-      if (metadata.width && metadata.height && (metadata.width > 2560 || metadata.height > 2560)) {
-        pipeline = pipeline.resize(2560, 2560, {
-          fit: 'inside',
-          withoutEnlargement: true,
-        });
-      }
-
-      if (mimetype.includes('jpeg') || mimetype.includes('jpg')) {
-        return await pipeline.jpeg({ quality: 82, mozjpeg: true }).toBuffer();
-      }
-
-      if (mimetype.includes('png')) {
-        try {
-          return await pipeline.png({ compressionLevel: 8, palette: true, quality: 85 }).toBuffer();
-        } catch {
-          return await pipeline.png({ compressionLevel: 8 }).toBuffer();
-        }
-      }
-
-      if (mimetype.includes('webp')) {
-        return await pipeline.webp({ quality: 82 }).toBuffer();
-      }
-
-      if (mimetype.includes('gif')) {
-        return await pipeline.gif().toBuffer();
-      }
-
-      // Default image fallback (e.g. avif, tiff)
-      return await pipeline.toBuffer();
-    } catch (err: any) {
-      this.logger.warn(`Sharp image compression warning for ${filename}: ${err?.message || err}`);
-      return buffer;
     }
   }
 
@@ -135,14 +81,5 @@ export class FileCompressorService {
       this.logger.warn(`PDF compression warning for ${filename}: ${err?.message || err}`);
       return buffer;
     }
-  }
-
-  /**
-   * Video file compression fallback / pass-through
-   */
-  private async compressVideo(buffer: Buffer, filename: string): Promise<Buffer> {
-    // Return original buffer safely for video files if no dedicated binary processor is active
-    this.logger.debug(`Video file uploaded: ${filename} (${(buffer.length / (1024 * 1024)).toFixed(2)} MB)`);
-    return buffer;
   }
 }

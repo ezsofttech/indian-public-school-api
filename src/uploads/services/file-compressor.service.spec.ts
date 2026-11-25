@@ -46,5 +46,6 @@ describe('FileCompressorService', () => {
     const result = await service.compress(mockFile);
     expect(result).toBeDefined();
     expect(result.buffer).toBeDefined();
+    expect(result.buffer.toString()).toBe('1234567890');
   });
 });
