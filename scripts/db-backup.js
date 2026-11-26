@@ -29,7 +29,7 @@ function formatCollection(docs) {
 }
 
 async function main() {
-  console.log('=== [db:backup] Starting Database Backup ===');
+  console.log('=== [db:backup] Starting Database Backup (Pure MongoDB - Cloudinary excluded) ===');
   console.log('Connecting to database:', mongoUri.replace(/\/\/.*@/, '//<credentials>@'));
   await mongoose.connect(mongoUri);
   const database = mongoose.connection.db;
@@ -53,7 +53,7 @@ async function main() {
     collectionsMap[colName] = formatted;
     summaryTable[colName] = formatted.length;
 
-    // Write individual collection file to public/collections/<colName>.json
+    // Backend carries all collections as-is
     const filePath = path.join(collectionsDir, `${colName}.json`);
     fs.writeFileSync(filePath, JSON.stringify(formatted, null, 2), 'utf8');
     if (colName === 'galleries') {
@@ -126,35 +126,57 @@ async function main() {
     'utf8'
   );
 
-  // Sync to Next.js frontend public/collections if available
+  // Frontend strictly carries only the 8 required public portal collections:
+  const FRONTEND_PORTAL_COLLECTIONS = [
+    'schoolsettings',
+    'reviews',
+    'publicdisclosuresections',
+    'publicdisclosureconfigs',
+    'pages',
+    'news',
+    'menuitems',
+    'gallery',
+  ];
+
+  // Sync strictly required collections to Next.js frontend if available
   if (fs.existsSync(nextAppPublicPath)) {
     const nextCollectionsDir = path.join(nextAppPublicPath, 'collections');
-    if (!fs.existsSync(nextCollectionsDir)) {
-      fs.mkdirSync(nextCollectionsDir, { recursive: true });
-    }
+    if (!fs.existsSync(nextCollectionsDir)) fs.mkdirSync(nextCollectionsDir, { recursive: true });
 
-    // Sync all collection files
-    for (const [colName, docs] of Object.entries(collectionsMap)) {
-      const filePath = path.join(nextCollectionsDir, `${colName}.json`);
-      fs.writeFileSync(filePath, JSON.stringify(docs, null, 2), 'utf8');
-      if (colName === 'galleries') {
-        fs.writeFileSync(path.join(nextCollectionsDir, 'gallery.json'), JSON.stringify(docs, null, 2), 'utf8');
+    // Clean non-frontend collections from Next.js app
+    const existingFrontend = fs.readdirSync(nextCollectionsDir);
+    for (const file of existingFrontend) {
+      if (file.endsWith('.json')) {
+        const base = file.replace(/\.json$/, '');
+        if (!FRONTEND_PORTAL_COLLECTIONS.includes(base)) {
+          fs.unlinkSync(path.join(nextCollectionsDir, file));
+          console.log(`[db:backup] Cleaned non-portal collection from frontend: ${file}`);
+        }
       }
     }
 
-    // Write clean schoolsettings to nextCollectionsDir and nextAppPublicPath root
-    fs.writeFileSync(
-      path.join(nextCollectionsDir, 'schoolsettings.json'),
-      JSON.stringify(cleanSchoolSettings, null, 2),
-      'utf8'
-    );
-    fs.writeFileSync(
-      path.join(nextAppPublicPath, 'schoolsettings.json'),
-      JSON.stringify(cleanSchoolSettings, null, 2),
-      'utf8'
-    );
+    // Write the 8 portal collections to Next.js app
+    for (const colName of FRONTEND_PORTAL_COLLECTIONS) {
+      if (colName === 'schoolsettings') {
+        fs.writeFileSync(
+          path.join(nextCollectionsDir, 'schoolsettings.json'),
+          JSON.stringify(cleanSchoolSettings, null, 2),
+          'utf8'
+        );
+        continue;
+      }
+      const docs =
+        collectionsMap[colName] ||
+        (colName === 'gallery' ? collectionsMap['galleries'] : null) ||
+        [];
+      fs.writeFileSync(
+        path.join(nextCollectionsDir, `${colName}.json`),
+        JSON.stringify(docs, null, 2),
+        'utf8'
+      );
+    }
 
-    console.log(`Synced all ${Object.keys(collectionsMap).length} collections to Next.js app: ${nextCollectionsDir}`);
+    console.log(`Synced ${FRONTEND_PORTAL_COLLECTIONS.length} public portal collections to Next.js app: ${nextCollectionsDir}`);
   }
 
   console.log('\nDatabase backup completed successfully. Collections summary:');
