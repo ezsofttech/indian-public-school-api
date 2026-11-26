@@ -6,9 +6,14 @@ import { CloudinaryStorageStrategy } from './strategies/cloudinary-storage.strat
 import { LocalStorageStrategy } from './strategies/local-storage.strategy';
 import { GalleryRepository } from '../gallery/gallery.repository';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { extractCloudinaryPublicId, formatFileSizeErrorMessage, formatBytes } from './utils/cloudinary-helper';
+import {
+  extractCloudinaryPublicId,
+  formatFileSizeErrorMessage,
+  formatBytes,
+  toRelativeMediaPath,
+  getCloudinaryRootFolder,
+} from './utils';
 import { FileCompressorService } from './services/file-compressor.service';
-import { toRelativeMediaPath, getCloudinaryRootFolder } from '../common/config';
 import { MulterFile } from '../common/interfaces/multer.interface';
 
 @Injectable()
@@ -148,11 +153,11 @@ export class UploadsService {
       targetFolder = `${assetsPrefix}/Others`;
     }
 
-    // Final check: Guarantee no duplicate ips-education/assets/assets/ or assets/assets/ in targetFolder
+    // Final check: Guarantee no duplicate root/assets in targetFolder
+    const escapedAssetsPrefix = assetsPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     targetFolder = targetFolder
-      .replace(/\/ips-education\/assets\/ips-education\/assets\//gi, '/ips-education/assets/')
-      .replace(/\/ips-education\/assets\/assets\//gi, '/ips-education/assets/')
-      .replace(/^ips-education\/assets\/assets\//gi, 'ips-education/assets/')
+      .replace(new RegExp(`(?:/${escapedAssetsPrefix})+`, 'gi'), `/${assetsPrefix}`)
+      .replace(new RegExp(`^${escapedAssetsPrefix}/${escapedAssetsPrefix}`, 'gi'), assetsPrefix)
       .replace(/\/assets\/assets\//gi, '/assets/')
       .replace(/^assets\/assets\//gi, 'assets/');
 

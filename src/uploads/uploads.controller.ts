@@ -16,7 +16,7 @@ import { UploadsService } from './uploads.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiTags, ApiConsumes, ApiBody, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
-import { getCloudinaryRootFolder } from '../common/config';
+import { getCloudinaryRootFolder } from './utils';
 import type { MulterFile } from '../common/interfaces/multer.interface';
 
 @ApiTags('Uploads')

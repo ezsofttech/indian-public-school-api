@@ -2,8 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { IStorageStrategy, UploadResult } from './storage-strategy.interface';
-import { formatFileSizeErrorMessage } from '../utils/cloudinary-helper';
-import { toRelativeMediaPath, getCloudinaryRootFolder } from '../../common/config';
+import { formatFileSizeErrorMessage, toRelativeMediaPath, getCloudinaryRootFolder } from '../utils';
 import { MulterFile } from '../../common/interfaces/multer.interface';
 
 @Injectable()
@@ -169,14 +168,16 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
         .replace(/^\/+/, '');
 
       const rootFolder = getCloudinaryRootFolder(this.configService);
-      const rootClean = (rootFolder || 'ips-education').replace(/^\/+|\/+$/g, '');
-      const strippedClean = cleanKey.replace(new RegExp(`^${rootClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/`, 'i'), '');
+      const rootClean = rootFolder.replace(/^\/+|\/+$/g, '');
+      const strippedClean = rootClean
+        ? cleanKey.replace(new RegExp(`^${rootClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/`, 'i'), '')
+        : cleanKey;
 
       const candidates = Array.from(new Set([
         cleanKey,
         cleanKey.replace(/\.[a-zA-Z0-9]+$/, ''),
-        `${rootClean}/${strippedClean}`.replace(/\/+/g, '/'),
-        `${rootClean}/${strippedClean}`.replace(/\/+/g, '/').replace(/\.[a-zA-Z0-9]+$/, ''),
+        rootClean ? `${rootClean}/${strippedClean}`.replace(/\/+/g, '/') : cleanKey,
+        rootClean ? `${rootClean}/${strippedClean}`.replace(/\/+/g, '/').replace(/\.[a-zA-Z0-9]+$/, '') : cleanKey,
         strippedClean,
         strippedClean.replace(/\.[a-zA-Z0-9]+$/, ''),
       ])).filter(Boolean);
