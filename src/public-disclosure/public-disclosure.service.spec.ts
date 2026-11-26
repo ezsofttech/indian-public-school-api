@@ -42,6 +42,7 @@ import { PublicDisclosureService } from './public-disclosure.service';
 import { PublicDisclosureRepository } from './public-disclosure.repository';
 import { UploadsService } from '../uploads/uploads.service';
 import { PublicDisclosureSection } from './schemas/public-disclosure-section.schema';
+import { PublicDisclosureConfig } from './schemas/public-disclosure-config.schema';
 import {
   CloudinaryRecordFallback,
   CLOUDINARY_FALLBACK_EVENTS,
@@ -117,6 +118,13 @@ describe('PublicDisclosureService with Event-Based Fallback', () => {
         {
           provide: getModelToken(PublicDisclosureSection.name),
           useValue: mockSectionModel,
+        },
+        {
+          provide: getModelToken(PublicDisclosureConfig.name),
+          useValue: {
+            findOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+            findOneAndUpdate: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+          },
         },
         {
           provide: getConnectionToken(),

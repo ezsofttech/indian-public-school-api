@@ -1,5 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Injectable, Logger } from '@nestjs/common';
 import { StaffRepository } from './staff.repository';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
@@ -13,7 +12,6 @@ export class StaffService {
   constructor(
     private readonly staffRepository: StaffRepository,
     private readonly uploadsService: UploadsService,
-    @Optional() private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   async create(createStaffDto: CreateStaffDto) {
@@ -63,14 +61,6 @@ export class StaffService {
     }
 
     if (urlsToDelete.length > 0) {
-      if (this.eventEmitter) {
-        this.eventEmitter.emit('media.cleanup', {
-          urls: urlsToDelete,
-          recordType: 'staff',
-          recordId: id,
-        });
-      }
-
       await Promise.allSettled(
         urlsToDelete.map((url) => this.uploadsService.deleteFileByUrl(url)),
       );

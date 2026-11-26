@@ -1,5 +1,4 @@
 import { Injectable, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -33,37 +32,6 @@ export class UploadsService {
       await this.cacheManager.del('storage_usage_summary');
     } catch {
       // ignore
-    }
-  }
-
-  @OnEvent('media.cleanup')
-  @OnEvent('record.deleted')
-  async handleMediaCleanupEvent(payload: {
-    urls?: string[];
-    mediaUrls?: string[];
-    recordType?: string;
-    recordId?: string;
-  }) {
-    const urls = Array.isArray(payload?.urls)
-      ? payload.urls
-      : Array.isArray(payload?.mediaUrls)
-      ? payload.mediaUrls
-      : [];
-
-    if (urls.length === 0) return;
-
-    this.logger.log(
-      `Received cleanup event for ${payload?.recordType || 'record'} ${payload?.recordId || ''} with ${urls.length} files`,
-    );
-
-    for (const rawUrl of urls) {
-      if (rawUrl && typeof rawUrl === 'string') {
-        try {
-          await this.deleteFileByUrl(rawUrl);
-        } catch (err: any) {
-          this.logger.warn(`Failed to cleanup media file ${rawUrl} via event: ${err?.message || err}`);
-        }
-      }
     }
   }
 

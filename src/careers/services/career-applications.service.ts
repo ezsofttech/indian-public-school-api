@@ -115,14 +115,6 @@ export class CareerApplicationsService {
     }
 
     if (urlsToDelete.length > 0) {
-      if (this.eventEmitter) {
-        this.eventEmitter.emit('media.cleanup', {
-          urls: urlsToDelete,
-          recordType: 'career_application',
-          recordId: id,
-        });
-      }
-
       await Promise.allSettled(
         urlsToDelete.map((url) => this.uploadsService.deleteFileByUrl(url)),
       );
