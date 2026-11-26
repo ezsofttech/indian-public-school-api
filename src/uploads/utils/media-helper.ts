@@ -254,6 +254,13 @@ export function toFullMediaUrl(
 
   if (path.startsWith('http://') || path.startsWith('https://')) {
     if (path.includes('res.cloudinary.com')) {
+      const cloudBase = getCloudinaryCloudBaseUrl(cfg);
+      // If the URL comes from a legacy or different Cloudinary cloud name, normalize using current configuration
+      if (cloudBase && !path.startsWith(cloudBase)) {
+        const relative = toRelativeMediaPath(path, cfg);
+        return toFullMediaUrl(relative, mimeTypeOrConfig, configService);
+      }
+
       if (
         path.includes('/image/upload/') &&
         !path.includes('/image/upload/f_auto') &&
@@ -359,6 +366,13 @@ export function transformMediaUrlsToRelative<T>(
       }
     }
 
+    if (trimmed.includes('res.cloudinary.com') && (trimmed.includes('src=') || trimmed.includes('href='))) {
+      return trimmed.replace(
+        /https:\/\/res\.cloudinary\.com\/[a-zA-Z0-9_-]+\/(?:image|video|raw)\/upload\/[^"'\s\\]+/gi,
+        (match) => String(toRelativeMediaPath(match, configService)),
+      ) as unknown as T;
+    }
+
     if (PAGE_ROUTE_PATTERNS.test(trimmed) && !MEDIA_FILE_EXTENSIONS.test(trimmed)) {
       return trimmed as unknown as T;
     }
@@ -414,8 +428,25 @@ export function transformMediaPathsToFull<T>(
       }
     }
 
+    if (trimmed.includes('res.cloudinary.com') && (trimmed.includes('src=') || trimmed.includes('href='))) {
+      return trimmed.replace(
+        /https:\/\/res\.cloudinary\.com\/[a-zA-Z0-9_-]+\/(?:image|video|raw)\/upload\/[^"'\s\\]+/gi,
+        (match) => String(toFullMediaUrl(match, parentMimeType, configService)),
+      ) as unknown as T;
+    }
+
     if (PAGE_ROUTE_PATTERNS.test(trimmed) && !MEDIA_FILE_EXTENSIONS.test(trimmed)) {
       return trimmed as unknown as T;
+    }
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      if (trimmed.includes('res.cloudinary.com')) {
+        const cloudBase = getCloudinaryCloudBaseUrl(configService);
+        if (cloudBase && !trimmed.startsWith(cloudBase)) {
+          return toFullMediaUrl(trimmed, parentMimeType, configService) as unknown as T;
+        }
+      }
+      return obj as unknown as T;
     }
 
     if (trimmed.startsWith('/')) {

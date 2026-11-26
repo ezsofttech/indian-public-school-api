@@ -3,6 +3,7 @@ import {
   toRelativeMediaPath,
   toFullMediaUrl,
   buildCloudinaryMediaUrl,
+  transformMediaPathsToFull,
   formatBytes,
   formatFileSizeErrorMessage,
   extractCloudinaryPublicId,
@@ -54,6 +55,27 @@ describe('MediaHelper & Cloudinary Utilities', () => {
       const relative = '/Videos/campus-tour.mp4';
       expect(buildCloudinaryMediaUrl(relative, 'video/mp4')).toBe(
         'https://res.cloudinary.com/dnw7mgysa/video/upload/ips-education/assets/Videos/campus-tour.mp4',
+      );
+    });
+
+    it('should normalize legacy Cloudinary URLs from an older cloud name to current configured cloud', () => {
+      const legacyUrl = 'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Settings/Icons/Art.png';
+      expect(toFullMediaUrl(legacyUrl)).toBe(
+        'https://res.cloudinary.com/dnw7mgysa/image/upload/f_auto,q_auto/ips-education/assets/Settings/Icons/Art.png',
+      );
+    });
+
+    it('should normalize legacy Cloudinary URLs in transformMediaPathsToFull', () => {
+      const data = {
+        icon: 'https://res.cloudinary.com/niefrrkx/image/upload/ips-education/assets/Settings/Icons/Art.png',
+        banner: '/Settings/Home/file_abc.png',
+      };
+      const result = transformMediaPathsToFull(data);
+      expect(result.icon).toBe(
+        'https://res.cloudinary.com/dnw7mgysa/image/upload/f_auto,q_auto/ips-education/assets/Settings/Icons/Art.png',
+      );
+      expect(result.banner).toBe(
+        'https://res.cloudinary.com/dnw7mgysa/image/upload/f_auto,q_auto/ips-education/assets/Settings/Home/file_abc.png',
       );
     });
   });

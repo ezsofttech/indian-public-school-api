@@ -4,6 +4,25 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 
+// Load media utilities from TypeScript / build
+let transformMediaPathsToFull = (d) => d;
+let transformMediaUrlsToRelative = (d) => d;
+
+try {
+  require('ts-node/register');
+  const mh = require('../src/uploads/utils/media-helper');
+  if (mh.transformMediaPathsToFull) transformMediaPathsToFull = mh.transformMediaPathsToFull;
+  if (mh.transformMediaUrlsToRelative) transformMediaUrlsToRelative = mh.transformMediaUrlsToRelative;
+} catch (e) {
+  try {
+    const mh = require('../dist/uploads/utils/media-helper');
+    if (mh.transformMediaPathsToFull) transformMediaPathsToFull = mh.transformMediaPathsToFull;
+    if (mh.transformMediaUrlsToRelative) transformMediaUrlsToRelative = mh.transformMediaUrlsToRelative;
+  } catch (err) {
+    console.warn('[db:backup] Warning: Could not load media-helper utilities:', err.message);
+  }
+}
+
 const mongoUri =
   process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/indian-public-school';
 
@@ -50,15 +69,13 @@ async function main() {
 
     const rawDocs = await database.collection(colName).find({}).toArray();
     const formatted = formatCollection(rawDocs);
-    collectionsMap[colName] = formatted;
-    summaryTable[colName] = formatted.length;
+    const sanitized = transformMediaUrlsToRelative(formatted);
+    collectionsMap[colName] = sanitized;
+    summaryTable[colName] = sanitized.length;
 
-    // Backend carries all collections as-is
+    // Backend carries all collections as sanitized relative paths
     const filePath = path.join(collectionsDir, `${colName}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(formatted, null, 2), 'utf8');
-    if (colName === 'galleries') {
-      fs.writeFileSync(path.join(collectionsDir, 'gallery.json'), JSON.stringify(formatted, null, 2), 'utf8');
-    }
+    fs.writeFileSync(filePath, JSON.stringify(sanitized, null, 2), 'utf8');
   }
 
   // Handle clean schoolsettings (home layout & identity settings only)
@@ -104,10 +121,11 @@ async function main() {
     });
   }
 
-  // Write schoolsettings.json
+  // Write schoolsettings.json (sanitized relative paths for backend)
+  const cleanSchoolSettingsRelative = transformMediaUrlsToRelative(cleanSchoolSettings);
   fs.writeFileSync(
     path.join(collectionsDir, 'schoolsettings.json'),
-    JSON.stringify(cleanSchoolSettings, null, 2),
+    JSON.stringify(cleanSchoolSettingsRelative, null, 2),
     'utf8'
   );
 
@@ -135,7 +153,7 @@ async function main() {
     'pages',
     'news',
     'menuitems',
-    'gallery',
+    'galleries',
   ];
 
   // Sync strictly required collections to Next.js frontend if available
@@ -155,23 +173,22 @@ async function main() {
       }
     }
 
-    // Write the 8 portal collections to Next.js app
+    // Write the 8 portal collections to Next.js app with full URLs wrapped according to current configuration
     for (const colName of FRONTEND_PORTAL_COLLECTIONS) {
       if (colName === 'schoolsettings') {
+        const fullSchoolSettings = transformMediaPathsToFull(cleanSchoolSettings);
         fs.writeFileSync(
           path.join(nextCollectionsDir, 'schoolsettings.json'),
-          JSON.stringify(cleanSchoolSettings, null, 2),
+          JSON.stringify(fullSchoolSettings, null, 2),
           'utf8'
         );
         continue;
       }
-      const docs =
-        collectionsMap[colName] ||
-        (colName === 'gallery' ? collectionsMap['galleries'] : null) ||
-        [];
+      const docs = collectionsMap[colName] || [];
+      const fullDocs = transformMediaPathsToFull(docs);
       fs.writeFileSync(
         path.join(nextCollectionsDir, `${colName}.json`),
-        JSON.stringify(docs, null, 2),
+        JSON.stringify(fullDocs, null, 2),
         'utf8'
       );
     }
