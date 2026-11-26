@@ -41,6 +41,18 @@ export class SchoolSettingsController {
     return this.schoolSettingsService.findAll(queryDto, category, status);
   }
 
+  @Get('datasource')
+  @ApiOperation({ summary: 'Get public website data datasource with JSON-file fallback' })
+  getDatasource() {
+    return this.schoolSettingsService.getDatasource();
+  }
+
+  @Get('regarding')
+  @ApiOperation({ summary: 'Get the About/Regarding section for the public website' })
+  getRegarding() {
+    return this.schoolSettingsService.getRegarding();
+  }
+
   @Get('key/:key')
   @ApiOperation({ summary: 'Get a specific setting value by key name' })
   findByKey(@Param('key') key: string) {

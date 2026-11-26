@@ -203,4 +203,52 @@ export class SchoolSettingsService implements OnModuleInit {
     }
     return this.schoolSettingRepository.delete(id);
   }
+
+  async getDatasource(): Promise<Record<string, unknown>> {
+    const cacheKey = 'site_datasource';
+    try {
+      const nestCached = await this.cacheManager.get<Record<string, unknown>>(cacheKey);
+      if (nestCached && Object.keys(nestCached).length > 0) {
+        return nestCached;
+      }
+    } catch {
+      // continue to fetch from database if cache lookup fails
+    }
+
+    let datasource: Record<string, unknown> = {};
+    try {
+      const setting: any = await this.findActiveSetting();
+      const value = setting?.value;
+
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        datasource = { ...(value as Record<string, unknown>) };
+      }
+    } catch {
+      // JSON fallback works when MongoDB is temporarily down
+    }
+
+    if (!datasource || Object.keys(datasource).length === 0) {
+      try {
+        const filePath = join(process.cwd(), 'public', 'collections', 'schoolsettings.json');
+        datasource = JSON.parse(await readFile(filePath, 'utf8')) as Record<string, unknown>;
+      } catch {
+        datasource = {};
+      }
+    }
+
+    if (datasource && Object.keys(datasource).length > 0) {
+      try {
+        await this.cacheManager.set(cacheKey, datasource, 60 * 1000);
+      } catch {
+        // ignore
+      }
+    }
+
+    return datasource;
+  }
+
+  async getRegarding() {
+    const datasource = await this.getDatasource();
+    return (datasource as any).aboutUs ?? [];
+  }
 }

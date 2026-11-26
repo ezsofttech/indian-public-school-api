@@ -14,7 +14,6 @@ import { MenuItemsModule } from './menu-items/menu-items.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { InquiriesModule } from './inquiries/inquiries.module';
 import { NewsModule } from './news/news.module';
-import { RegardingModule } from './regarding/regarding.module';
 import { PagesModule } from './pages/pages.module';
 import { CareersModule } from './careers/careers.module';
 import { ThemeModule } from './theme/theme.module';
@@ -55,7 +54,6 @@ import { YouTubeModule } from './youtube/youtube.module';
     ReviewsModule,
     InquiriesModule,
     NewsModule,
-    RegardingModule,
     PagesModule,
     CareersModule,
     ThemeModule,
