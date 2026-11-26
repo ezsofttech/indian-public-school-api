@@ -5,12 +5,11 @@ import { ConfigService } from '@nestjs/config';
  */
 export function getCloudinaryCloudBaseUrl(configService?: ConfigService): string {
   const cloudName =
+    configService?.get<string>('cloudinary.cloudName') ||
     configService?.get<string>('CLOUDINARY_CLOUD_NAME') ||
-    process.env.CLOUDINARY_CLOUD_NAME;
+    process.env.CLOUDINARY_CLOUD_NAME ||
+    'ctpyyyuj';
 
-  if (!cloudName?.trim()) {
-    throw new Error('CLOUDINARY_CLOUD_NAME is required to build Cloudinary media URLs');
-  }
   return `https://res.cloudinary.com/${cloudName.trim()}`;
 }
 
@@ -19,6 +18,7 @@ export function getCloudinaryCloudBaseUrl(configService?: ConfigService): string
  */
 export function getCloudinaryRootFolder(configService?: ConfigService): string {
   const envFolder =
+    configService?.get<string>('cloudinary.rootFolder') ||
     configService?.get<string>('CLOUDINARY_ROOT_FOLDER') ||
     process.env.CLOUDINARY_ROOT_FOLDER;
 
@@ -29,7 +29,10 @@ export function getCloudinaryRootFolder(configService?: ConfigService): string {
  * Returns the base URL prefix for media assets dynamically.
  */
 export function getMediaBaseUrl(configService?: ConfigService): string {
-  const envUrl = configService?.get<string>('MEDIA_BASE_URL') || process.env.MEDIA_BASE_URL;
+  const envUrl =
+    configService?.get<string>('cloudinary.mediaBaseUrl') ||
+    configService?.get<string>('MEDIA_BASE_URL') ||
+    process.env.MEDIA_BASE_URL;
   if (envUrl && envUrl.trim() && !envUrl.includes('res.cloudinary.com')) return envUrl.trim().replace(/\/+$/, '');
 
   const cloudBase = getCloudinaryCloudBaseUrl(configService);
@@ -74,46 +77,53 @@ export function formatPrettyEventName(name?: unknown): string {
 export function toRelativeMediaPath(pathOrUrl: unknown, configService?: ConfigService): unknown {
   if (typeof pathOrUrl !== 'string' || !pathOrUrl.trim()) return pathOrUrl;
 
-  let path = pathOrUrl.trim();
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    const cloudBase = getCloudinaryCloudBaseUrl(configService);
-    if (cloudBase && path.startsWith(cloudBase)) {
-      path = path.slice(cloudBase.length);
-    } else {
-      const match = path.match(/^https?:\/\/res\.cloudinary\.com\/[^/]+(\/.*)$/i);
-      if (match?.[1]) {
-        path = match[1];
-      } else {
-        // External link (e.g. https://www.cbse.gov.in) -> preserve untouched!
-        return path;
-      }
-    }
+  const path = pathOrUrl.trim();
+  if (!path.startsWith('http://') && !path.startsWith('https://')) {
+    if (path.startsWith('/')) return path;
+    return `/${path}`;
   }
 
-  const rootFolder = getCloudinaryRootFolder(configService);
-  const escapedRoot = rootFolder ? rootFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+  // External link (e.g. https://www.cbse.gov.in) -> preserve untouched!
+  if (!path.includes('res.cloudinary.com')) {
+    return path;
+  }
 
+  // Fast direct extraction from Cloudinary URLs (single-pass)
+  const rootFolder = getCloudinaryRootFolder(configService) || 'ips-education';
+  const rootPath = rootFolder.toLowerCase().replace(/\/+$/, '').endsWith('/assets')
+    ? rootFolder
+    : `${rootFolder}/assets`;
+  const escapedRootPath = rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedFolder = rootFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const fastMatch = path.match(new RegExp(`\\/(?:${escapedRootPath}|${escapedFolder}\\/assets|assets)\\/(.+)$`, 'i'));
+  if (fastMatch?.[1]) {
+    const cleanSub = fastMatch[1].replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf').replace(/^\/+/, '');
+    return `/${cleanSub}`;
+  }
+
+  // Fallback cleanup
   let clean = path.replace(/^https?:\/\/[^\/]+/i, '');
-
-  let prev = '';
-  while (prev !== clean) {
-    prev = clean;
-    clean = clean
-      .replace(/^\/(?:(?:image|video|raw)\/upload\/)+/i, '/')
-      .replace(/^\/(?:(?:f_auto(?:,q_auto)?|q_auto)\/)+/i, '/')
-      .replace(/^\/v\d+\//i, '/')
-      .replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/')
-      .replace(/^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i, '/')
-      .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
-      .replace(/^\/assets\/assets\//i, '/')
-      .replace(/^\/assets\//i, '/');
-  }
-
-  // Strip duplicate .pdf.pdf
-  clean = clean.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
+  clean = clean
+    .replace(/^\/(?:(?:image|video|raw)\/upload\/)+/i, '/')
+    .replace(/^\/(?:[a-z]{1,4}_[a-zA-Z0-9_.-]+(?:,[a-z]{1,4}_[a-zA-Z0-9_.-]+)*\/)+/i, '/')
+    .replace(/^\/v\d+\//i, '/')
+    .replace(/^\/(?:ips-education)\/(?:assets\/)?/i, '/')
+    .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
+    .replace(/^\/assets\/assets\//i, '/')
+    .replace(/^\/assets\//i, '/')
+    .replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
 
   return clean.startsWith('/') ? clean : `/${clean}`;
 }
+
+const RE_UPLOAD_PREFIXES = /^\/(?:(?:image|video|raw)\/upload\/)+/i;
+const RE_TRANSFORMATIONS = /^\/(?:[a-z]{1,4}_[a-zA-Z0-9_.-]+(?:,[a-z]{1,4}_[a-zA-Z0-9_.-]+)*\/)+/i;
+const RE_VERSION = /^\/v\d+\//i;
+const RE_LEGACY_IPS_ROOTS = /^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i;
+const RE_CUSTOM_ASSETS = /^\/[a-zA-Z0-9_-]+\/assets\//i;
+const RE_DOUBLE_ASSETS = /^\/assets\/assets\//i;
+const RE_SINGLE_ASSETS = /^\/assets\//i;
+const RE_DOUBLE_PDF = /\.pdf\.pdf(?=($|\?|#))/gi;
 
 /**
  * Clean, centralized helper to construct full Cloudinary URL dynamically for API responses.
@@ -128,18 +138,9 @@ export function toFullMediaUrl(
 
   let path = pathOrUrl.trim();
   const cfg = typeof mimeTypeOrConfig === 'object' ? mimeTypeOrConfig : configService;
-  const mediaPreset = (cfg?.get<string>('MEDIA_PRESET') || process.env.MEDIA_PRESET || 'default').toLowerCase().trim();
 
   if (path.startsWith('http://') || path.startsWith('https://')) {
     if (path.includes('res.cloudinary.com')) {
-      // If default preset, check if this is a Settings asset that can be served locally
-      if (mediaPreset === 'default' && (path.includes('/Settings/') || path.includes('/assets/Settings/'))) {
-        const match = path.match(/\/(Settings\/[^?#]+)/i);
-        if (match && match[1]) {
-          return `/assets/${match[1]}`;
-        }
-      }
-
       // Inject f_auto,q_auto for Cloudinary image URLs if not already present
       if (
         path.includes('/image/upload/') &&
@@ -179,36 +180,32 @@ export function toFullMediaUrl(
     prefix = '/image/upload';
   }
 
-  const escapedRoot = rootPath ? rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
   let cleanPath = path.replace(/^https?:\/\/[^\/]+/i, '');
 
-  let prevPath = '';
-  while (prevPath !== cleanPath) {
-    prevPath = cleanPath;
+  // Fast single-pass normalization
+  if (cleanPath.includes('upload') || cleanPath.includes('assets') || cleanPath.includes('ips-') || /^\/v\d+\//i.test(cleanPath)) {
+    const escapedRoot = rootPath ? rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+    const rootRegex = new RegExp(`^\\/${escapedRoot}\\/`, 'i');
+
     cleanPath = cleanPath
-      .replace(/^\/(?:(?:image|video|raw)\/upload\/)+/i, '/')
-      .replace(/^\/(?:(?:f_auto(?:,q_auto)?|q_auto)\/)+/i, '/')
-      .replace(/^\/v\d+\//i, '/')
-      .replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/')
-      .replace(/^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i, '/')
-      .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
-      .replace(/^\/assets\/assets\//i, '/')
-      .replace(/^\/assets\//i, '/');
+      .replace(RE_UPLOAD_PREFIXES, '/')
+      .replace(RE_TRANSFORMATIONS, '/')
+      .replace(RE_VERSION, '/')
+      .replace(rootRegex, '/')
+      .replace(RE_LEGACY_IPS_ROOTS, '/')
+      .replace(RE_CUSTOM_ASSETS, '/')
+      .replace(RE_DOUBLE_ASSETS, '/')
+      .replace(RE_SINGLE_ASSETS, '/');
   }
 
   // Normalize duplicate .pdf.pdf extension
-  cleanPath = cleanPath.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
+  cleanPath = cleanPath.replace(RE_DOUBLE_PDF, '.pdf');
 
   const normalized = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
 
-  // If preset is default, serve local Settings assets locally
-  if (mediaPreset === 'default') {
-    if (
-      normalized.startsWith('/Settings/') ||
-      normalized.startsWith('/assets/Settings/')
-    ) {
-      return `/assets${normalized.replace(/^\/assets/, '')}`;
-    }
+  // Preserve already explicit local /assets/ paths
+  if (normalized.startsWith('/assets/')) {
+    return normalized;
   }
 
   const envUrl = cfg?.get<string>('MEDIA_BASE_URL') || process.env.MEDIA_BASE_URL;

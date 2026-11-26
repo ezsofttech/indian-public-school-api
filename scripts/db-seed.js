@@ -113,10 +113,12 @@ async function main() {
   );
   console.log('[db:seed] School Branding (site_logo) Seeded.');
 
-  // 3. Seed site_datasource from cloud-datasource.json if exists
-  if (fs.existsSync(datasourcePath)) {
+  // 3. Seed site_datasource from schoolsettings.json if exists
+  const schoolsettingsPath = path.join(rootDir, 'public', 'collections', 'schoolsettings.json');
+  const targetPath = fs.existsSync(schoolsettingsPath) ? schoolsettingsPath : datasourcePath;
+  if (fs.existsSync(targetPath)) {
     try {
-      const datasource = JSON.parse(fs.readFileSync(datasourcePath, 'utf8'));
+      const datasource = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
       await settingsCol.updateOne(
         { key: 'site_datasource' },
         {

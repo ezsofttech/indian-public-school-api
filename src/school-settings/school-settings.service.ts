@@ -31,7 +31,7 @@ export class SchoolSettingsService implements OnModuleInit {
     try {
       const existing = await this.schoolSettingRepository.findByKey('site_datasource');
       if (!existing) {
-        const filePath = join(process.cwd(), 'public', 'cloud-datasource.json');
+        const filePath = join(process.cwd(), 'public', 'collections', 'schoolsettings.json');
         const jsonContent = JSON.parse(await readFile(filePath, 'utf8'));
         await this.schoolSettingRepository.create({
           key: 'site_datasource',
@@ -87,7 +87,7 @@ export class SchoolSettingsService implements OnModuleInit {
 
   async findAll(queryDto: PaginationQueryDto = {}, category?: string, status?: string) {
     const additionalFilter: Record<string, any> = {
-      key: { $ne: 'site_logo' },
+      key: { $nin: ['site_logo', 'certified_board', 'trust_board', 'academic_partner'] },
     };
     if (category && category !== 'All') additionalFilter.category = category;
     if (status && status !== 'All') {
@@ -115,7 +115,25 @@ export class SchoolSettingsService implements OnModuleInit {
       // ignore
     }
 
-    const res = await this.schoolSettingRepository.findByKey(key);
+    let res = await this.schoolSettingRepository.findByKey(key);
+    if (!res && (key === 'site_logo' || key === 'certified_board' || key === 'trust_board' || key === 'academic_partner')) {
+      const ds = await this.schoolSettingRepository.findByKey('site_datasource');
+      if (ds?.value) {
+        const val: any = typeof ds.value === 'string' ? JSON.parse(ds.value) : ds.value;
+        const identity = (Array.isArray(val?.home) ? val.home[0]?.identity : val?.identity) || val || {};
+        const extracted = identity[key] || val[key];
+        if (extracted) {
+          res = {
+            key,
+            category: key === 'site_logo' ? 'Branding' : 'Footer',
+            description: `${key} setting resolved from site_datasource`,
+            value: extracted,
+            status: 'Active',
+          } as any;
+        }
+      }
+    }
+
     if (res) {
       try {
         await this.cacheManager.set(cacheKey, res, 60 * 1000);

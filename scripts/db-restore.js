@@ -9,7 +9,6 @@ const mongoUri =
   process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/indian-public-school';
 
 const rootDir = process.cwd();
-const datasourcePath = path.join(rootDir, 'public', 'cloud-datasource.json');
 const collectionsDir = path.join(rootDir, 'public', 'collections');
 
 function toObjectId(idStr) {
@@ -29,15 +28,35 @@ function toObjectId(idStr) {
   return undefined;
 }
 
-function loadCollectionJson(name, fallbackList = []) {
-  const filePath = path.join(collectionsDir, `${name}.json`);
-  if (fs.existsSync(filePath)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      if (Array.isArray(data) && data.length > 0) return data;
-    } catch {}
+function getMatchQueryFn(colName) {
+  switch (colName) {
+    case 'users':
+      return (doc, mongoId) => (doc.email ? { email: doc.email } : mongoId ? { _id: mongoId } : { username: doc.username });
+    case 'staff':
+      return (doc, mongoId) => (doc.staffId ? { staffId: doc.staffId } : doc.email ? { email: doc.email } : mongoId ? { _id: mongoId } : { name: doc.name });
+    case 'students':
+      return (doc, mongoId) => (doc.studentId ? { studentId: doc.studentId } : doc.admissionNo ? { admissionNo: doc.admissionNo } : mongoId ? { _id: mongoId } : { name: doc.name });
+    case 'galleries':
+      return (doc, mongoId) => (doc.publicId ? { publicId: doc.publicId } : doc.slug ? { slug: doc.slug } : mongoId ? { _id: mongoId } : { title: doc.title });
+    case 'menuitems':
+      return (doc, mongoId) => (doc.menuId ? { menuId: doc.menuId } : mongoId ? { _id: mongoId } : { title: doc.title });
+    case 'news':
+      return (doc, mongoId) => (doc.publicId ? { publicId: doc.publicId } : mongoId ? { _id: mongoId } : { title: doc.title });
+    case 'reviews':
+      return (doc, mongoId) => (doc.publicId ? { publicId: doc.publicId } : mongoId ? { _id: mongoId } : { reviewerName: doc.reviewerName });
+    case 'pages':
+      return (doc, mongoId) => (doc.slug ? { slug: doc.slug } : mongoId ? { _id: mongoId } : { title: doc.title });
+    case 'careerposts':
+      return (doc, mongoId) => (doc.slug ? { slug: doc.slug } : mongoId ? { _id: mongoId } : { title: doc.title });
+    case 'careerapplications':
+      return (doc, mongoId) => (doc.email ? { email: doc.email } : mongoId ? { _id: mongoId } : { applicantName: doc.applicantName });
+    case 'inquiries':
+      return (doc, mongoId) => (doc.email ? { email: doc.email, phone: doc.phone } : mongoId ? { _id: mongoId } : { name: doc.name });
+    case 'themes':
+      return (doc, mongoId) => (doc.slug ? { slug: doc.slug } : mongoId ? { _id: mongoId } : { name: doc.name });
+    default:
+      return (doc, mongoId) => (mongoId ? { _id: mongoId } : doc.slug ? { slug: doc.slug } : doc.title ? { title: doc.title } : { ...doc });
   }
-  return Array.isArray(fallbackList) ? fallbackList : [];
 }
 
 async function restoreCollection(database, collectionName, docs, matchQueryFn) {
@@ -48,8 +67,6 @@ async function restoreCollection(database, collectionName, docs, matchQueryFn) {
   const collection = database.collection(collectionName);
 
   if (collectionName === 'menuitems') {
-    // For menuitems, the 3-level hierarchy depends on exact parentId -> _id relationships.
-    // We clean the collection and restore with canonical _ids and parentIds to prevent broken hierarchy.
     await collection.deleteMany({});
     const docsToInsert = docs.map((doc) => {
       const copy = { ...doc };
@@ -114,107 +131,83 @@ async function restoreCollection(database, collectionName, docs, matchQueryFn) {
 
 async function main() {
   console.log('=== [db:restore] Starting Database Restore ===');
-  if (!fs.existsSync(datasourcePath)) {
-    console.error(`[db:restore] Error: Datasource file not found at ${datasourcePath}`);
+  if (!fs.existsSync(collectionsDir)) {
+    console.error(`[db:restore] Error: Collections directory not found at ${collectionsDir}`);
     process.exit(1);
   }
 
-  const datasource = JSON.parse(fs.readFileSync(datasourcePath, 'utf8'));
   console.log('Connecting to database:', mongoUri.replace(/\/\/.*@/, '//<credentials>@'));
   await mongoose.connect(mongoUri);
   const database = mongoose.connection.db;
   console.log('Connected to MongoDB successfully.');
 
-  // 1. Restore schoolsettings: site_datasource & site_logo
-  const settingsCol = database.collection('schoolsettings');
-  await settingsCol.updateOne(
-    { key: 'site_datasource' },
-    {
-      $set: {
-        key: 'site_datasource',
-        category: 'Content',
-        value: datasource,
-        description: 'Public Indian Public School website datasource',
-        status: 'Active',
-        updatedAt: new Date(),
-      },
-      $setOnInsert: { createdAt: new Date() },
-    },
-    { upsert: true },
-  );
+  const files = fs.readdirSync(collectionsDir).filter((f) => f.endsWith('.json'));
+  console.log(`Found ${files.length} collection JSON files in ${collectionsDir}.`);
 
-  const siteLogo = datasource.site_logo || datasource.home?.[0]?.identity?.site_logo;
-  if (siteLogo && typeof siteLogo === 'object' && siteLogo.logoUrl) {
-    await settingsCol.updateOne(
-      { key: 'site_logo' },
-      {
-        $set: {
-          key: 'site_logo',
-          category: 'Branding',
-          value: siteLogo,
-          description: 'Official School Header and Footer Logo branding setting',
-          status: 'Active',
-          updatedAt: new Date(),
-        },
-        $setOnInsert: { createdAt: new Date() },
-      },
-      { upsert: true },
-    );
+  const summary = {};
+
+  for (const file of files) {
+    const colName = path.basename(file, '.json');
+    const filePath = path.join(collectionsDir, file);
+
+    try {
+      const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+      if (colName === 'schoolsettings') {
+        const settingsCol = database.collection('schoolsettings');
+        const siteLogo = content.site_logo || content.home?.[0]?.identity?.site_logo;
+
+        await settingsCol.updateOne(
+          { key: 'site_datasource' },
+          {
+            $set: {
+              key: 'site_datasource',
+              category: 'Content',
+              value: content,
+              description: 'Public Indian Public School website datasource',
+              status: 'Active',
+              updatedAt: new Date(),
+            },
+            $setOnInsert: { createdAt: new Date() },
+          },
+          { upsert: true }
+        );
+
+        if (siteLogo && typeof siteLogo === 'object' && siteLogo.logoUrl) {
+          await settingsCol.updateOne(
+            { key: 'site_logo' },
+            {
+              $set: {
+                key: 'site_logo',
+                category: 'Branding',
+                value: siteLogo,
+                description: 'Official School Header and Footer Logo branding setting',
+                status: 'Active',
+                updatedAt: new Date(),
+              },
+              $setOnInsert: { createdAt: new Date() },
+            },
+            { upsert: true }
+          );
+        }
+        summary['schoolsettings'] = 'Restored site_datasource & site_logo';
+      } else if (Array.isArray(content) && content.length > 0) {
+        const restored = await restoreCollection(
+          database,
+          colName,
+          content,
+          getMatchQueryFn(colName)
+        );
+        summary[colName] = `${restored} items restored`;
+      }
+    } catch (err) {
+      console.warn(`[db:restore] Warning restoring ${file}:`, err.message);
+      summary[colName] = `Error: ${err.message}`;
+    }
   }
 
-  // 2. Load collections from public/collections or fallback to datasource
-  const galleries = loadCollectionJson('galleries', datasource.gallery);
-  const menuitems = loadCollectionJson('menuitems', datasource.menuitems);
-  const news = loadCollectionJson('news', datasource.news);
-  const reviews = loadCollectionJson('reviews', datasource.reviews);
-  const pages = loadCollectionJson('pages', datasource.pages);
-
-  // 3. Restore each collection using canonical unique business keys
-  const restoredGalleries = await restoreCollection(
-    database,
-    'galleries',
-    galleries,
-    (doc) => (doc.publicId ? { publicId: doc.publicId } : doc.slug ? { slug: doc.slug } : { title: doc.title }),
-  );
-
-  const restoredMenuitems = await restoreCollection(
-    database,
-    'menuitems',
-    menuitems,
-    (doc) => (doc.menuId ? { menuId: doc.menuId } : { title: doc.title }),
-  );
-
-  const restoredNews = await restoreCollection(
-    database,
-    'news',
-    news,
-    (doc) => (doc.publicId ? { publicId: doc.publicId } : { title: doc.title }),
-  );
-
-  const restoredReviews = await restoreCollection(
-    database,
-    'reviews',
-    reviews,
-    (doc) => (doc.publicId ? { publicId: doc.publicId } : { reviewerName: doc.reviewerName }),
-  );
-
-  const restoredPages = await restoreCollection(
-    database,
-    'pages',
-    pages,
-    (doc) => (doc.slug ? { slug: doc.slug } : { title: doc.title }),
-  );
-
   console.log('\n[db:restore] Database Restore Completed Successfully:');
-  console.table({
-    siteDatasource: 'Updated in schoolsettings',
-    siteLogo: siteLogo ? 'Configured in schoolsettings' : 'Not set',
-    galleries: restoredGalleries,
-    menuitems: restoredMenuitems,
-    news: restoredNews,
-    reviews: restoredReviews,
-    pages: restoredPages,
-  });
+  console.table(summary);
 
   await mongoose.disconnect();
 }

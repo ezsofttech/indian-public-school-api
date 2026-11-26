@@ -53,7 +53,7 @@ export class RegardingService {
 
     if (!datasource || Object.keys(datasource).length === 0) {
       try {
-        const filePath = join(process.cwd(), 'public', 'cloud-datasource.json');
+        const filePath = join(process.cwd(), 'public', 'collections', 'schoolsettings.json');
         datasource = JSON.parse(await readFile(filePath, 'utf8')) as Datasource;
       } catch {
         datasource = {};

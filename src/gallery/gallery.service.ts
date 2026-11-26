@@ -6,22 +6,12 @@ import { CreateGalleryDto } from './dto/create-gallery.dto';
 import { UpdateGalleryDto } from './dto/update-gallery.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { UploadsService } from '../uploads/uploads.service';
-import { formatPrettyEventName } from '../common/config';
+import { formatPrettyEventName, toRelativeMediaPath } from '../common/config';
 
 function cleanAssetPath(url: string): string {
   if (!url || typeof url !== 'string') return url;
-  let trimmed = url.trim();
-  if (trimmed.includes('cloudinary.com')) {
-    const match = trimmed.match(/\/(?:ips-education\/assets|assets)\/(.+)$/i);
-    if (match && match[1]) {
-      return '/' + match[1].replace(/^\/+/, '');
-    }
-  }
-  let clean = trimmed.replace(/^https?:\/\/[^\/]+/i, '').replace(/^\/+/, '');
-  if (clean.toLowerCase().startsWith('assets/')) {
-    clean = clean.slice('assets/'.length);
-  }
-  return '/' + clean;
+  const rel = toRelativeMediaPath(url);
+  return typeof rel === 'string' ? rel : url;
 }
 
 export function getCanonicalAssetKey(url: string): string {
@@ -177,17 +167,9 @@ export class GalleryService {
   }
 
   async findAll(queryDto: PaginationQueryDto = {}, eventType?: string, directory?: string) {
-    const cacheKey = `gallery_list_${JSON.stringify(queryDto)}_${eventType || ''}_${directory || ''}`;
-    try {
-      const cached = await this.cacheManager.get(cacheKey);
-      if (cached) return cached;
-    } catch {
-      // ignore
-    }
-
     const page = Math.max(1, Number(queryDto.page) || 1);
     const limit = Math.max(1, Math.min(500, Number(queryDto.limit) || 10));
-    const search = (queryDto.search || '').trim().toLowerCase();
+    const search = (queryDto.search || '').trim();
 
     // Determine eventType filter value from all possible query parameters
     let activeEventType = (eventType || (queryDto as any).eventType || '').trim();
@@ -210,248 +192,128 @@ export class GalleryService {
     }
 
     const sortBy = queryDto.sortBy || 'createdAt';
-    const sortOrder = String(queryDto.sortOrder || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+    const sortOrder = String(queryDto.sortOrder || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
 
-    // 1. Fetch ALL DB items from MongoDB (unpaginated)
+    const cacheKey = `gallery_list_${page}_${limit}_${activeEventType}_${activeDirectory}_${search}_${sortBy}_${sortOrder}`;
+    try {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) return cached;
+    } catch {
+      // ignore
+    }
+
+    const additionalFilter: Record<string, any> = {
+      $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }],
+    };
+
+    if (activeEventType && activeEventType.toLowerCase() !== 'all') {
+      const escapedType = activeEventType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      additionalFilter.eventType = new RegExp(`^${escapedType}$`, 'i');
+    }
+
+    if (activeDirectory && activeDirectory.toLowerCase() !== 'all') {
+      const targetDir = activeDirectory.trim().replace(/^\/+|\/+$/g, '');
+      const escapedDir = targetDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (targetDir.toLowerCase() === 'album') {
+        additionalFilter.directory = new RegExp('^Album', 'i');
+      } else {
+        additionalFilter.directory = new RegExp(`^${escapedDir}`, 'i');
+      }
+    }
+
     const dbResult = await this.galleryRepository.findAll(
-      { page: 1, limit: 10000 },
-      [],
-      {},
+      { page, limit, search, sortBy, sortOrder },
+      ['eventName', 'album', 'eventType', 'directory', 'publicId', 'fileUrl'],
+      additionalFilter,
     );
-    const rawDbItems = dbResult.items || (dbResult as any).data || [];
-    const dbItems = rawDbItems.map((item: any) => {
+
+    const rawItems = dbResult.items || (dbResult as any).data || [];
+    const items = rawItems.map((item: any) => {
       const doc = item.toObject ? item.toObject() : { ...item };
+      doc.id = String(doc._id || doc.id);
+      doc._id = String(doc._id || doc.id);
       doc.directory = inferDirectoryFromItem(doc.directory, doc.fileUrl, doc.album, doc.eventType);
       doc.album = extractAlbumName(doc.album, doc.directory, doc.eventType);
       return doc;
     });
 
-    // 2. Map DB file URLs
-    const dbUrls = new Set<string>();
+    const shouldIncludeCdn =
+      (queryDto as any).includeCdn === 'true' ||
+      (queryDto as any).includeCdn === true ||
+      (queryDto as any).all === 'true' ||
+      limit >= 500;
 
-    dbItems.forEach((item: any) => {
-      const urls = Array.isArray(item.fileUrl)
-        ? item.fileUrl
-        : typeof item.fileUrl === 'string' && item.fileUrl.trim()
-        ? [item.fileUrl]
-        : [];
+    if (shouldIncludeCdn) {
+      try {
+        const cdnResources = await this.uploadsService.getCloudinaryResources();
+        if (Array.isArray(cdnResources) && cdnResources.length > 0) {
+          const existingUrls = new Set<string>();
+          items.forEach((it: any) => {
+            const urls = Array.isArray(it.fileUrl) ? it.fileUrl : typeof it.fileUrl === 'string' ? [it.fileUrl] : [];
+            urls.forEach((u: string) => {
+              if (u) {
+                existingUrls.add(u);
+                const fn = u.split('/').pop()?.split('?')[0];
+                if (fn) existingUrls.add(fn);
+              }
+            });
+          });
 
-      urls.forEach((u: string) => {
-        if (u) {
-          const trimmed = u.trim();
-          dbUrls.add(trimmed);
-          const filename = trimmed.split('/').pop();
-          if (filename) dbUrls.add(filename);
+          cdnResources.forEach((res: any, idx: number) => {
+            const resUrl = (res.url || '').trim();
+            const resId = (res.id || '').trim();
+            const filename = resUrl.split('/').pop()?.split('?')[0];
+            const exists =
+              (resUrl && existingUrls.has(resUrl)) ||
+              (resId && existingUrls.has(resId)) ||
+              (filename && existingUrls.has(filename));
+
+            if (!exists) {
+              const cat = res.category || 'General';
+              const lowerCat = cat.toLowerCase();
+              let dirPath = cat;
+              let albumName = cat;
+              if (lowerCat.startsWith('album/')) {
+                albumName = cat.slice('album/'.length);
+                dirPath = cat;
+              } else if (lowerCat === 'others' || lowerCat === 'other') {
+                dirPath = 'Others';
+                albumName = 'Others';
+              }
+
+              items.push({
+                _id: `cdn-${res.id || idx}`,
+                id: `cdn-${res.id || idx}`,
+                publicId: res.id || `cdn-${idx}`,
+                eventName: res.title || cat,
+                album: albumName,
+                eventType: cat,
+                directory: dirPath,
+                fileUrl: [res.url],
+                mimeType: res.mimeType || (res.format === 'pdf' ? 'application/pdf' : res.resourceType === 'video' ? `video/${res.format || 'mp4'}` : `image/${res.format || 'jpeg'}`),
+                isCdnResource: true,
+                createdAt: res.createdAt ? new Date(res.createdAt) : new Date(0),
+                updatedAt: res.createdAt ? new Date(res.createdAt) : new Date(0),
+              });
+            }
+          });
         }
-      });
-    });
-
-    // 3. Fetch direct Cloudinary CDN resources
-    let cdnResources: any[] = [];
-    try {
-      cdnResources = await this.uploadsService.getCloudinaryResources();
-    } catch (err) {
-      this.logger.warn(`Could not fetch Cloudinary CDN resources for gallery list: ${err}`);
-    }
-
-    // 4. Convert Cloudinary assets not yet in DB into virtual Gallery entries
-    const virtualItems: any[] = [];
-    (Array.isArray(cdnResources) ? cdnResources : []).forEach((res: any, idx: number) => {
-      const resUrl = (res.url || '').trim();
-      const resId = (res.id || '').trim();
-      const filename = resUrl.split('/').pop();
-
-      const existsInDb =
-        (resUrl && dbUrls.has(resUrl)) ||
-        (resId && dbUrls.has(resId)) ||
-        (filename && dbUrls.has(filename));
-
-      if (!existsInDb) {
-        const cat = res.category || 'General';
-        const lowerCat = cat.toLowerCase();
-        const lowerUrl = resUrl.toLowerCase();
-        const lowerId = resId.toLowerCase();
-        let dirPath: string;
-        let eventType = cat;
-        let albumName: string;
-
-        const isAlbum =
-          lowerCat.startsWith('album/') ||
-          lowerCat === 'album' ||
-          lowerUrl.includes('/album/') ||
-          lowerId.includes('/album/');
-
-        if (lowerCat === 'others' || lowerCat === 'other' || lowerCat.includes('visual editor') || lowerUrl.includes('/others/')) {
-          dirPath = 'Others';
-          eventType = 'Others';
-          albumName = 'Others';
-        } else if (lowerCat === 'home' || lowerUrl.includes('/settings/home')) {
-          dirPath = 'Settings/Home';
-          eventType = 'Home';
-          albumName = 'Home';
-        } else if (lowerCat === 'popupbanner' || lowerCat.includes('popup') || lowerUrl.includes('popup')) {
-          dirPath = 'Others';
-          eventType = 'Others';
-          albumName = 'Others';
-        } else if (lowerCat === 'news' || lowerCat.includes('press') || lowerUrl.includes('/press')) {
-          dirPath = 'PressRelease';
-          eventType = 'PressRelease';
-          albumName = 'PressRelease';
-        } else if (lowerCat === 'student' || lowerUrl.includes('/student/')) {
-          dirPath = 'Student';
-          eventType = 'Student';
-          albumName = 'Student';
-        } else if (lowerCat === 'staff' || lowerUrl.includes('/staff/')) {
-          dirPath = 'Staff';
-          eventType = 'Staff';
-          albumName = 'Staff';
-        } else if (lowerCat === 'videos' || lowerUrl.includes('/videos/')) {
-          dirPath = 'Videos';
-          eventType = 'Videos';
-          albumName = 'Videos';
-        } else if (lowerCat.startsWith('documents') || lowerUrl.includes('/documents/')) {
-          dirPath = lowerCat.includes('admission') ? 'Documents/Admission' : 'Documents/General';
-          eventType = 'Documents';
-          albumName = 'Documents';
-        } else if (lowerCat.startsWith('settings') || lowerUrl.includes('/settings/')) {
-          dirPath = cat;
-          eventType = 'Settings';
-          albumName = 'Settings';
-        } else if (isAlbum) {
-          if (lowerCat.startsWith('album/')) {
-            albumName = cat.slice('album/'.length);
-            dirPath = cat;
-            eventType = albumName;
-          } else {
-            albumName = cat === 'General' ? 'Events' : cat;
-            dirPath = `Album/${albumName}`;
-            eventType = albumName;
-          }
-        } else {
-          dirPath = cat;
-          eventType = cat;
-          albumName = cat;
-        }
-
-        virtualItems.push({
-          _id: `cdn-${res.id || idx}`,
-          id: `cdn-${res.id || idx}`,
-          publicId: res.id || `cdn-${idx}`,
-          eventName: (dirPath === 'Others' || lowerCat.includes('visual editor')) ? 'Others Asset' : (res.title || cat),
-          album: albumName,
-          eventType,
-          directory: dirPath,
-          fileUrl: [res.url],
-          mimeType: res.mimeType || (res.format === 'pdf' ? 'application/pdf' : res.resourceType === 'video' ? `video/${res.format || 'mp4'}` : `image/${res.format || 'jpeg'}`),
-          isCdnResource: true,
-          createdAt: res.createdAt ? new Date(res.createdAt) : new Date(0),
-          updatedAt: res.createdAt ? new Date(res.createdAt) : new Date(0),
-        });
+      } catch (err) {
+        this.logger.warn(`Could not merge Cloudinary CDN resources into gallery list: ${err}`);
       }
-    });
-
-    // 5. Combine DB records and virtual CDN records into complete dataset
-    let combined = [...dbItems, ...virtualItems];
-
-    // Deduplicate combined records by canonical asset key
-    const seenAssetKeys = new Set<string>();
-    const deduplicatedCombined: any[] = [];
-    for (const item of combined) {
-      const urls = Array.isArray(item.fileUrl)
-        ? item.fileUrl
-        : typeof item.fileUrl === 'string' && item.fileUrl.trim()
-        ? [item.fileUrl]
-        : [];
-      const primaryUrl = urls[0] || (item as any).url || '';
-      const key = getCanonicalAssetKey(primaryUrl);
-      if (key && seenAssetKeys.has(key)) {
-        continue;
-      }
-      if (key) seenAssetKeys.add(key);
-      deduplicatedCombined.push(item);
-    }
-    combined = deduplicatedCombined;
-
-    // 6. Apply case-insensitive eventType filter
-    if (activeEventType && activeEventType.toLowerCase() !== 'all') {
-      combined = combined.filter((item: any) => {
-        const itemType = String(item.eventType || '').trim().toLowerCase();
-        return itemType === activeEventType.toLowerCase();
-      });
     }
 
-    // 6b. Apply case-insensitive directory filter
-    if (activeDirectory && activeDirectory.toLowerCase() !== 'all') {
-      const targetDir = activeDirectory.trim().toLowerCase().replace(/^\/+|\/+$/g, '');
-      combined = combined.filter((item: any) => {
-        const itemDir = String(item.directoryName || item.directory || '').trim().toLowerCase().replace(/^\/+|\/+$/g, '');
-        if (!itemDir) return false;
-
-        if (targetDir === 'album') {
-          // Strictly ONLY show records whose directory name includes 'album'
-          return itemDir === 'album' || itemDir.startsWith('album/') || itemDir.includes('album');
-        }
-
-        // For specific directory paths (e.g. 'album/events', 'others', 'documents/general')
-        return itemDir === targetDir || itemDir.startsWith(`${targetDir}/`) || itemDir.endsWith(`/${targetDir}`);
-      });
-    }
-
-    // 7. Apply case-insensitive search across eventName, album, eventType, directory, publicId, and fileUrl
-    if (search) {
-      combined = combined.filter((item: any) => {
-        const nameMatch = String(item.eventName || '').toLowerCase().includes(search);
-        const albumMatch = String(item.album || '').toLowerCase().includes(search);
-        const typeMatch = String(item.eventType || '').toLowerCase().includes(search);
-        const dirMatch = String(item.directoryName || item.directory || '').toLowerCase().includes(search);
-        const publicIdMatch = String(item.publicId || item._id || item.id || '').toLowerCase().includes(search);
-        const urlMatch = Array.isArray(item.fileUrl) && item.fileUrl.some((u: string) => String(u).toLowerCase().includes(search));
-        return nameMatch || albumMatch || typeMatch || dirMatch || publicIdMatch || urlMatch;
-      });
-    }
-
-    // 8. Apply sorting
-    combined.sort((a: any, b: any) => {
-      let valA = a[sortBy] ?? a.createdAt ?? '';
-      let valB = b[sortBy] ?? b.createdAt ?? '';
-      if (valA instanceof Date) valA = valA.getTime();
-      if (valB instanceof Date) valB = valB.getTime();
-
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
-
-      if (valA < valB) return sortOrder === 1 ? -1 : 1;
-      if (valA > valB) return sortOrder === 1 ? 1 : -1;
-
-      const createdA = a.createdAt instanceof Date
-        ? a.createdAt.getTime()
-        : new Date(a.createdAt || 0).getTime() || 0;
-      const createdB = b.createdAt instanceof Date
-        ? b.createdAt.getTime()
-        : new Date(b.createdAt || 0).getTime() || 0;
-      if (createdA !== createdB) return createdB - createdA;
-
-      const identityA = String(a.publicId || a._id || a.id || (Array.isArray(a.fileUrl) ? a.fileUrl[0] : '') || '').toLowerCase();
-      const identityB = String(b.publicId || b._id || b.id || (Array.isArray(b.fileUrl) ? b.fileUrl[0] : '') || '').toLowerCase();
-      if (identityA < identityB) return -1;
-      if (identityA > identityB) return 1;
-      return 0;
-    });
-
-    // 9. Apply final pagination on complete dataset
-    const total = combined.length;
+    const total = items.length > dbResult.total ? items.length : dbResult.total;
     const totalPages = Math.ceil(total / limit) || 1;
-    const skip = (page - 1) * limit;
-    const items = combined.slice(skip, skip + limit);
 
     const result = {
       items,
       total,
-      page,
-      limit,
+      page: dbResult.page,
+      limit: dbResult.limit,
       totalPages,
-      hasNextPage: page < totalPages,
-      hasPrevPage: page > 1,
+      hasNextPage: dbResult.hasNextPage,
+      hasPrevPage: dbResult.hasPrevPage,
     };
 
     try {
