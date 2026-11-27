@@ -51,4 +51,12 @@ export class SchoolSettingRepository extends BaseRepository<SchoolSettingDocumen
     }
     return this.schoolSettingModel.updateMany(query, { $set: { status: 'Inactive' } }).exec();
   }
+
+  async updatePartialByKey(key: string, setOps: Record<string, any>): Promise<any> {
+    return this.schoolSettingModel.updateOne(
+      { key },
+      { $set: setOps },
+      { upsert: true }
+    ).exec();
+  }
 }
