@@ -1,5 +1,4 @@
 import { Injectable, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -7,9 +6,15 @@ import { CloudinaryStorageStrategy } from './strategies/cloudinary-storage.strat
 import { LocalStorageStrategy } from './strategies/local-storage.strategy';
 import { GalleryRepository } from '../gallery/gallery.repository';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { extractCloudinaryPublicId, formatFileSizeErrorMessage, formatBytes } from './utils/cloudinary-helper';
+import {
+  extractCloudinaryPublicId,
+  formatFileSizeErrorMessage,
+  formatBytes,
+  toRelativeMediaPath,
+  toFullMediaUrl,
+  getCloudinaryRootFolder,
+} from './utils';
 import { FileCompressorService } from './services/file-compressor.service';
-import { toRelativeMediaPath, getCloudinaryRootFolder } from '../common/config';
 import { MulterFile } from '../common/interfaces/multer.interface';
 
 @Injectable()
@@ -33,37 +38,6 @@ export class UploadsService {
       await this.cacheManager.del('storage_usage_summary');
     } catch {
       // ignore
-    }
-  }
-
-  @OnEvent('media.cleanup')
-  @OnEvent('record.deleted')
-  async handleMediaCleanupEvent(payload: {
-    urls?: string[];
-    mediaUrls?: string[];
-    recordType?: string;
-    recordId?: string;
-  }) {
-    const urls = Array.isArray(payload?.urls)
-      ? payload.urls
-      : Array.isArray(payload?.mediaUrls)
-      ? payload.mediaUrls
-      : [];
-
-    if (urls.length === 0) return;
-
-    this.logger.log(
-      `Received cleanup event for ${payload?.recordType || 'record'} ${payload?.recordId || ''} with ${urls.length} files`,
-    );
-
-    for (const rawUrl of urls) {
-      if (rawUrl && typeof rawUrl === 'string') {
-        try {
-          await this.deleteFileByUrl(rawUrl);
-        } catch (err: any) {
-          this.logger.warn(`Failed to cleanup media file ${rawUrl} via event: ${err?.message || err}`);
-        }
-      }
     }
   }
 
@@ -180,11 +154,11 @@ export class UploadsService {
       targetFolder = `${assetsPrefix}/Others`;
     }
 
-    // Final check: Guarantee no duplicate ips-education/assets/assets/ or assets/assets/ in targetFolder
+    // Final check: Guarantee no duplicate root/assets in targetFolder
+    const escapedAssetsPrefix = assetsPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     targetFolder = targetFolder
-      .replace(/\/ips-education\/assets\/ips-education\/assets\//gi, '/ips-education/assets/')
-      .replace(/\/ips-education\/assets\/assets\//gi, '/ips-education/assets/')
-      .replace(/^ips-education\/assets\/assets\//gi, 'ips-education/assets/')
+      .replace(new RegExp(`(?:/${escapedAssetsPrefix})+`, 'gi'), `/${assetsPrefix}`)
+      .replace(new RegExp(`^${escapedAssetsPrefix}/${escapedAssetsPrefix}`, 'gi'), assetsPrefix)
       .replace(/\/assets\/assets\//gi, '/assets/')
       .replace(/^assets\/assets\//gi, 'assets/');
 
@@ -232,6 +206,7 @@ export class UploadsService {
 
     const relativeUrl = toRelativeMediaPath(result.url, this.configService) as string;
 
+    // In DB, always store clean relative path without full domain
     const asset = await this.galleryRepository.create({
       eventName: computedEventName,
       fileUrl: [relativeUrl],
@@ -244,10 +219,15 @@ export class UploadsService {
 
     await this.invalidateCloudinaryCache();
 
+    // Absolute full URL for frontend preview / immediate consumption
+    const fullUrl = result.url || (toFullMediaUrl(relativeUrl, processedFile.mimetype, this.configService) as string);
+
     return {
       ...plainAsset,
-      url: relativeUrl,
-      fileUrl: asset.fileUrl || [relativeUrl],
+      url: fullUrl,
+      secure_url: fullUrl,
+      fileUrl: [fullUrl],
+      relativeUrl: relativeUrl,
       mimeType: asset.mimeType || processedFile.mimetype,
       key: result.key,
       provider: result.provider,

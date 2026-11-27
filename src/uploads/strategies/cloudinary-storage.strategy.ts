@@ -1,12 +1,8 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { v2 as cloudinary } from 'cloudinary';
-import { Readable } from 'stream';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as crypto from 'crypto';
 import { IStorageStrategy, UploadResult } from './storage-strategy.interface';
-import { formatFileSizeErrorMessage } from '../utils/cloudinary-helper';
-import { toRelativeMediaPath, getCloudinaryRootFolder } from '../../common/config';
+import { formatFileSizeErrorMessage, toRelativeMediaPath, getCloudinaryRootFolder } from '../utils';
 import { MulterFile } from '../../common/interfaces/multer.interface';
 
 @Injectable()
@@ -16,12 +12,14 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
   private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache to prevent hitting 500 ops/hr rate limit
   private rateLimitUntil: number = 0;
 
-  constructor(private readonly configService: ConfigService) {
-    cloudinary.config({
-      cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-      api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
-      api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
-    });
+  constructor(private readonly configService: ConfigService) {}
+
+  private getCredentials() {
+    return {
+      cloudName: (this.configService.get<string>('cloudinary.cloudName') || '').trim(),
+      apiKey: (this.configService.get<string>('cloudinary.apiKey') || '').trim(),
+      apiSecret: (this.configService.get<string>('cloudinary.apiSecret') || '').trim(),
+    };
   }
 
   private invalidateCache() {
@@ -70,253 +68,149 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
     const isPdf =
       file.mimetype === 'application/pdf' ||
       file.originalname.toLowerCase().endsWith('.pdf');
+    const isVideo = file.mimetype.startsWith('video/');
+    const isMedia = file.mimetype.startsWith('image/') || isVideo;
 
-    const isMedia = file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/');
+    const doUpload = async (resourceType: 'image' | 'video' | 'raw' | 'auto'): Promise<UploadResult> => {
+      const { cloudName, apiKey, apiSecret } = this.getCredentials();
+      if (!cloudName || !apiKey || !apiSecret) {
+        throw new BadRequestException('Cloudinary credentials (cloudName, apiKey, apiSecret) are missing in environment');
+      }
 
-    const doUploadSingle = (resourceType: 'auto' | 'image' | 'raw'): Promise<UploadResult> => {
-      return new Promise((resolve, reject) => {
-        const cleanName = file.originalname.replace(/\.pdf$/i, '').replace(/[^a-zA-Z0-9._-]/g, '_');
-        const options: Record<string, any> = {
-          folder: resolvedFolder,
-          resource_type: resourceType,
-        };
+      const cleanName = file.originalname.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const publicId = `${Date.now()}_${cleanName}${resourceType === 'raw' && isPdf ? '.pdf' : ''}`;
+      const timestamp = Math.floor(Date.now() / 1000);
 
-        if (resourceType === 'raw') {
-          const rawExt = isPdf && !cleanName.toLowerCase().endsWith('.pdf') ? '.pdf' : '';
-          options.public_id = `${Date.now()}_${cleanName}${rawExt}`;
-        } else if (isPdf) {
-          // When resource_type is 'image', Cloudinary format extension is automatically appended on delivery.
-          // Do not append .pdf to public_id to avoid double-extension .pdf.pdf
-          options.public_id = `${Date.now()}_${cleanName}`;
-        } else {
-          options.use_filename = true;
-          options.unique_filename = true;
-        }
+      const paramsToSign: Record<string, string> = {
+        folder: resolvedFolder,
+        public_id: publicId,
+        timestamp: String(timestamp),
+      };
 
-        const uploadStream = cloudinary.uploader.upload_stream(
-          options,
-          (error, result) => {
-            if (error) {
-              const formattedMsg = formatFileSizeErrorMessage(error.message || String(error));
-              if (typeof error === 'object' && error !== null) {
-                error.message = formattedMsg;
-              }
-              return reject(error);
-            }
-            if (!result) {
-              return reject(new Error('Cloudinary upload returned null result'));
-            }
-            let finalUrl = result.secure_url;
-            if (isPdf && finalUrl && !finalUrl.toLowerCase().endsWith('.pdf')) {
-              // Ensure PDF secure_url has .pdf extension if omitted by public_id
-              const hashIdx = finalUrl.indexOf('#');
-              const queryIdx = finalUrl.indexOf('?');
-              const splitIdx = Math.min(
-                queryIdx !== -1 ? queryIdx : finalUrl.length,
-                hashIdx !== -1 ? hashIdx : finalUrl.length,
-              );
-              const basePath = finalUrl.slice(0, splitIdx);
-              const suffix = finalUrl.slice(splitIdx);
-              if (!basePath.toLowerCase().endsWith('.pdf')) {
-                finalUrl = `${basePath}.pdf${suffix}`;
-              }
-            }
+      const signString = Object.keys(paramsToSign).sort().map((k) => `${k}=${paramsToSign[k]}`).join('&') + apiSecret;
+      const signature = crypto.createHash('sha1').update(signString).digest('hex');
 
-            // Normalize any duplicate .pdf.pdf extension to single .pdf
-            if (finalUrl) {
-              finalUrl = finalUrl.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
-            }
+      const formData = new FormData();
+      const blob = new Blob([new Uint8Array(file.buffer)], { type: file.mimetype });
+      formData.append('file', blob, file.originalname);
+      formData.append('api_key', apiKey);
+      formData.append('timestamp', String(timestamp));
+      formData.append('signature', signature);
+      formData.append('folder', resolvedFolder);
+      formData.append('public_id', publicId);
 
-            const relativePath = toRelativeMediaPath(finalUrl, this.configService) as string;
+      const endpoint = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`;
+      const res = await fetch(endpoint, { method: 'POST', body: formData });
+      const result = await res.json();
 
-            this.invalidateCache();
-            resolve({
-              url: relativePath,
-              key: result.public_id,
-              provider: 'cloudinary',
-              mimeType: file.mimetype,
-            });
-          },
-        );
+      if (!res.ok || !result || result.error) {
+        const rawErr = result?.error?.message || `Upload failed with status ${res.status}`;
+        const formattedMsg = formatFileSizeErrorMessage(rawErr);
+        const errObj: any = new Error(formattedMsg);
+        errObj.http_code = res.status;
+        throw errObj;
+      }
 
-        const readStream = Readable.from(file.buffer);
-        readStream.pipe(uploadStream);
-      });
+      let finalUrl = result.secure_url || result.url;
+      if (isPdf && finalUrl && !finalUrl.toLowerCase().endsWith('.pdf')) {
+        const [base] = finalUrl.split(/[?#]/);
+        finalUrl = `${base}.pdf`;
+      }
+      if (finalUrl) {
+        finalUrl = finalUrl.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
+      }
+
+      const relativePath = toRelativeMediaPath(finalUrl, this.configService) as string;
+      this.invalidateCache();
+
+      return {
+        url: relativePath,
+        key: result.public_id,
+        provider: 'cloudinary',
+        mimeType: file.mimetype,
+      };
     };
 
-    const doUploadWithRetry = async (
-      resourceType: 'auto' | 'image' | 'raw',
-      maxRetries = 2,
-    ): Promise<UploadResult> => {
-      let lastError: any;
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          return await doUploadSingle(resourceType);
-        } catch (err: any) {
-          lastError = err;
-          if (this.isRateLimitError(err)) {
-            if (attempt < maxRetries) {
-              const delay = (attempt + 1) * 1500;
-              this.logger.warn(
-                `Cloudinary capacity limit reached (resource_type=${resourceType}, filename=${file.originalname}). Retrying in ${delay}ms... (Attempt ${attempt + 1}/${maxRetries})`,
-              );
-              await new Promise((res) => setTimeout(res, delay));
-              continue;
-            }
-          }
-          throw err;
-        }
-      }
-      throw lastError;
-    };
-
-    if (isPdf) {
-      try {
-        return await doUploadWithRetry('image', 1);
-      } catch (err: any) {
-        const errMsg = err?.message || err?.error?.message || String(err);
-        this.logger.warn(
-          `Cloudinary 'image' upload failed for PDF ${file.originalname} (${errMsg}).`,
-        );
-
-        // If the file was compressed and failed as 'image', retry 'image' with the original uncompressed buffer
-        const origBuf = (file as any)?.originalBuffer;
-        if (origBuf && Buffer.isBuffer(origBuf) && origBuf.length > 0 && origBuf !== file.buffer) {
-          try {
-            this.logger.warn(
-              `Retrying 'image' upload for PDF ${file.originalname} with original uncompressed buffer...`,
-            );
-            file.buffer = origBuf;
-            file.size = origBuf.length;
-            return await doUploadWithRetry('image', 1);
-          } catch (retryErr: any) {
-            this.logger.warn(
-              `Fallback 'image' upload with original buffer also failed: ${retryErr?.message || retryErr}`,
-            );
-          }
-        }
-
-        await new Promise((res) => setTimeout(res, 1000));
-        try {
-          return await doUploadWithRetry('auto', 1);
-        } catch (err2: any) {
-          const err2Msg = err2?.message || err2?.error?.message || String(err2);
-          this.logger.warn(
-            `Cloudinary 'auto' upload failed for PDF ${file.originalname} (${err2Msg}). Retrying with 'raw'...`,
-          );
-          await new Promise((res) => setTimeout(res, 1000));
-          return await doUploadWithRetry('raw', 1);
-        }
-      }
-    }
-
-    if (!isMedia) {
-      try {
-        return await doUploadWithRetry('raw', 1);
-      } catch (err: any) {
-        const errMsg = err?.message || err?.error?.message || String(err);
-        this.logger.warn(
-          `Cloudinary 'raw' upload failed for ${file.originalname} (${errMsg}). Retrying with 'auto'...`,
-        );
-        await new Promise((res) => setTimeout(res, 1000));
-        return await doUploadWithRetry('auto', 1);
-      }
-    }
-
+    const initialType = isVideo ? 'video' : isPdf || isMedia ? 'image' : 'raw';
     try {
-      return await doUploadWithRetry('auto', 1);
+      return await doUpload(initialType);
     } catch (err: any) {
-      const errMsg = err?.message || err?.error?.message || String(err);
-      this.logger.warn(
-        `Cloudinary 'auto' upload failed for ${file.originalname} (${errMsg}). Retrying with 'image'...`,
-      );
-      await new Promise((res) => setTimeout(res, 1000));
-      return await doUploadWithRetry('image', 1);
+      if (this.isRateLimitError(err)) {
+        await new Promise((res) => setTimeout(res, 1500));
+        return await doUpload(initialType);
+      }
+      if (initialType === 'image') {
+        this.logger.warn(`Cloudinary 'image' upload failed for ${file.originalname}, falling back to 'raw'...`);
+        return await doUpload('raw');
+      }
+      throw err;
     }
   }
 
   async deleteFile(key: string): Promise<boolean> {
     try {
       this.invalidateCache();
-      const rootFolder = getCloudinaryRootFolder(this.configService);
+      const { cloudName, apiKey, apiSecret } = this.getCredentials();
+      if (!cloudName || !apiKey || !apiSecret) {
+        this.logger.warn('Cloudinary credentials missing for deleteFile');
+        return false;
+      }
 
-      // Normalize key by stripping protocol, domain, and /upload/ path if present
-      const cleanKey = key
-        .replace(/^https?:\/\/[^\/]+\/(?:raw|image|video)\/upload\/(?:v\d+\/)?/, '')
+      let cleanKey = decodeURIComponent(key).trim();
+      if (cleanKey.includes('/upload/')) {
+        cleanKey = cleanKey.split('/upload/')[1] || cleanKey;
+      }
+      cleanKey = cleanKey
+        .replace(/^(?:(?:[a-z]{1,4}_[a-zA-Z0-9_.-]+(?:,[a-z]{1,4}_[a-zA-Z0-9_.-]+)*)\/)+/i, '')
+        .replace(/^v\d+\//i, '')
+        .split('?')[0]
+        .split('#')[0]
         .replace(/^\/+/, '');
 
-      const rootClean = (rootFolder || 'ips-education').replace(/^\/+|\/+$/g, '');
-      const rootWithoutAssets = rootClean.replace(/\/+assets$/i, '');
-      const rootWithAssets = rootClean.toLowerCase().endsWith('/assets')
-        ? rootClean
-        : `${rootClean}/assets`;
+      const rootFolder = getCloudinaryRootFolder(this.configService);
+      const rootClean = rootFolder.replace(/^\/+|\/+$/g, '');
+      const strippedClean = rootClean
+        ? cleanKey.replace(new RegExp(`^${rootClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/`, 'i'), '')
+        : cleanKey;
 
-      const strippedClean = cleanKey
-        .replace(new RegExp(`^${rootClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/`, 'i'), '')
-        .replace(new RegExp(`^${rootWithAssets.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/`, 'i'), '')
-        .replace(new RegExp(`^${rootWithoutAssets.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/`, 'i'), '')
-        .replace(/^assets\//i, '');
-
-      const baseVariants = [
+      const candidates = Array.from(new Set([
         cleanKey,
+        cleanKey.replace(/\.[a-zA-Z0-9]+$/, ''),
+        rootClean ? `${rootClean}/${strippedClean}`.replace(/\/+/g, '/') : cleanKey,
+        rootClean ? `${rootClean}/${strippedClean}`.replace(/\/+/g, '/').replace(/\.[a-zA-Z0-9]+$/, '') : cleanKey,
         strippedClean,
-        `${rootClean}/${strippedClean}`,
-        `${rootWithAssets}/${strippedClean}`,
-        `${rootWithoutAssets}/${strippedClean}`,
-        `assets/${strippedClean}`,
-      ];
+        strippedClean.replace(/\.[a-zA-Z0-9]+$/, ''),
+      ])).filter(Boolean);
 
-      const candidateKeys: string[] = [];
-      for (const v of baseVariants) {
-        if (!v) continue;
-        const normalized = v.replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
-        const withoutExt = normalized.replace(/\.[a-zA-Z0-9]+$/, '');
-        candidateKeys.push(normalized);
-        candidateKeys.push(withoutExt);
-      }
+      const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+      const hasRawExt = /\.(pdf|docx?|xlsx?|zip|rar|pptx?|txt|csv)$/i.test(cleanKey);
+      const resourceTypes: Array<'raw' | 'image' | 'video'> = hasRawExt
+        ? ['raw', 'image', 'video']
+        : ['image', 'video', 'raw'];
 
-      const uniqueCandidateKeys = Array.from(new Set(candidateKeys)).filter(Boolean);
-
-      const primaryConfig = {
-        cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-        api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
-        api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
-      };
-
-      const configs = [primaryConfig];
-
-      let anyDeleted = false;
-
-      for (const cfg of configs) {
-        if (!cfg.cloud_name || !cfg.api_key || !cfg.api_secret) continue;
-        cloudinary.config(cfg);
-
-        for (const candidate of uniqueCandidateKeys) {
-          const hasRawExt = /\.(pdf|docx?|xlsx?|zip|rar|pptx?|txt|csv)$/i.test(candidate);
-          const resourceTypes: Array<'raw' | 'image' | 'video'> = hasRawExt
-            ? ['raw', 'image', 'video']
-            : ['image', 'video', 'raw'];
-
-          for (const rt of resourceTypes) {
-            try {
-              const res = await cloudinary.uploader.destroy(candidate, { resource_type: rt });
-              if (res && (res.result === 'ok' || res.result === 'deleted')) {
-                this.logger.log(`Cloudinary asset destroyed successfully: [${cfg.cloud_name}] ${candidate} (${rt})`);
-                anyDeleted = true;
-                break;
-              }
-            } catch {
-              // continue trying
+      for (const candidate of candidates) {
+        for (const rt of resourceTypes) {
+          try {
+            const endpoint = `https://api.cloudinary.com/v1_1/${cloudName}/${rt}/destroy`;
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                Authorization: `Basic ${auth}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ public_id: candidate }),
+            });
+            const data = await res.json();
+            if (data?.result === 'ok' || data?.result === 'deleted') {
+              this.logger.log(`Cloudinary asset destroyed: [${cloudName}] ${candidate} (${rt})`);
+              return true;
             }
+          } catch {
+            // continue
           }
-          if (anyDeleted) break;
         }
-        if (anyDeleted) break;
       }
-
-      // Restore primary config
-      cloudinary.config(primaryConfig);
-      return anyDeleted;
+      return false;
     } catch (err) {
       this.logger.error(`Error deleting Cloudinary asset ${key}`, err);
       return false;
@@ -347,19 +241,45 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       return cached.data;
     }
 
-    // If Cloudinary rate limit was recently triggered, return cached or empty without calling Cloudinary API
     if (now < this.rateLimitUntil) {
       return cached ? cached.data : [];
     }
 
-    const fetchWithRetry = async (options: Record<string, any>, retries = 2, delayMs = 500): Promise<any> => {
+    const { cloudName, apiKey, apiSecret } = this.getCredentials();
+    if (!cloudName || !apiKey || !apiSecret) {
+      return cached ? cached.data : [];
+    }
+
+    const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+
+    const fetchWithRetry = async (resType: string, cursor?: string, retries = 2, delayMs = 500): Promise<any> => {
+      const query = new URLSearchParams({
+        max_results: '500',
+        type: 'upload',
+        prefix: targetFolder,
+      });
+      if (cursor) {
+        query.set('next_cursor', cursor);
+      }
+
+      const endpoint = `https://api.cloudinary.com/v1_1/${cloudName}/resources/${resType}?${query.toString()}`;
+
       for (let i = 0; i <= retries; i++) {
         try {
-          return await cloudinary.api.resources(options);
+          const res = await fetch(endpoint, {
+            headers: {
+              Authorization: `Basic ${auth}`,
+            },
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            const err: any = new Error(data?.error?.message || `Failed to fetch resources with status ${res.status}`);
+            err.http_code = res.status;
+            throw err;
+          }
+          return data;
         } catch (err: any) {
-          const isRateLimit = this.isRateLimitError(err);
-          if (isRateLimit) {
-            // Do not retry on rate limit errors
+          if (this.isRateLimitError(err)) {
             throw err;
           }
 
@@ -381,17 +301,7 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       for (const resType of resourceTypes) {
         let nextCursor: string | undefined = undefined;
         do {
-          const options: Record<string, any> = {
-            max_results: 500,
-            type: 'upload',
-            resource_type: resType,
-            prefix: targetFolder,
-          };
-          if (nextCursor) {
-            options.next_cursor = nextCursor;
-          }
-
-          const res = await fetchWithRetry(options);
+          const res = await fetchWithRetry(resType, nextCursor);
           if (res?.resources && Array.isArray(res.resources)) {
             allResources.push(...res.resources);
           }
@@ -410,9 +320,11 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
         }
         const pubId = r.public_id || '';
         const parts = pubId.split('/');
+        const configuredRoot = getCloudinaryRootFolder(this.configService);
+        const rootParts = configuredRoot.toLowerCase().split('/').filter(Boolean);
         const cleanParts = parts.slice(0, -1).filter((p: string) => {
           const lower = p.toLowerCase();
-          return lower !== 'ips-education' && lower !== 'assets';
+          return !rootParts.includes(lower) && lower !== 'assets';
         });
 
         const category = cleanParts.length > 0 ? cleanParts.join('/') : 'General';
@@ -434,7 +346,6 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       const isRateLimit = this.isRateLimitError(err);
       
       if (isRateLimit) {
-        // Lockout for 10 minutes on Rate Limit 420/429
         this.rateLimitUntil = now + 10 * 60 * 1000;
         this.logger.warn(`Cloudinary Admin API rate limit reached. Serving cached assets for 10 minutes until rate limit resets.`);
       } else {
@@ -462,8 +373,26 @@ export class CloudinaryStorageStrategy implements IStorageStrategy {
       return cached.data;
     }
 
+    const { cloudName, apiKey, apiSecret } = this.getCredentials();
+    if (!cloudName || !apiKey || !apiSecret) {
+      return cached ? cached.data : null;
+    }
+
+    const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+    const endpoint = `https://api.cloudinary.com/v1_1/${cloudName}/usage`;
+
     try {
-      const usage = await cloudinary.api.usage();
+      const res = await fetch(endpoint, {
+        headers: {
+          Authorization: `Basic ${auth}`,
+        },
+      });
+      const usage = await res.json();
+      if (!res.ok) {
+        const err: any = new Error(usage?.error?.message || `Failed to fetch usage: status ${res.status}`);
+        err.http_code = res.status;
+        throw err;
+      }
       this.cache.set(cacheKey, { timestamp: now, data: usage });
       return usage;
     } catch (err: any) {

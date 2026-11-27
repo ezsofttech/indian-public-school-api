@@ -26,26 +26,29 @@ export class YouTubeService {
 
   private get channelHandle(): string {
     return (
-      this.configService.get<string>('YOUTUBE_CHANNEL_HANDLE')?.trim() ||
-      process.env.YOUTUBE_CHANNEL_HANDLE?.trim() ||
+      this.configService.get<string>('youtube.channelHandle') ||
+      this.configService.get<string>('YOUTUBE_CHANNEL_HANDLE') ||
+      process.env.YOUTUBE_CHANNEL_HANDLE ||
       ''
-    );
+    ).trim();
   }
 
   private get channelId(): string {
     return (
-      this.configService.get<string>('YOUTUBE_CHANNEL_ID')?.trim() ||
-      process.env.YOUTUBE_CHANNEL_ID?.trim() ||
+      this.configService.get<string>('youtube.channelId') ||
+      this.configService.get<string>('YOUTUBE_CHANNEL_ID') ||
+      process.env.YOUTUBE_CHANNEL_ID ||
       ''
-    );
+    ).trim();
   }
 
   private get apiKey(): string | undefined {
     return (
-      this.configService.get<string>('YOUTUBE_API_KEY')?.trim() ||
-      process.env.YOUTUBE_API_KEY?.trim() ||
-      undefined
-    );
+      this.configService.get<string>('youtube.apiKey') ||
+      this.configService.get<string>('YOUTUBE_API_KEY') ||
+      process.env.YOUTUBE_API_KEY ||
+      ''
+    ).trim() || undefined;
   }
 
   // ---------------- Cache Helper ----------------

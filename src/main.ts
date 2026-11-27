@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, RequestMethod } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
@@ -15,7 +16,13 @@ async function bootstrap() {
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 
-  const corsOrigins = process.env.CORS_ORIGINS?.trim();
+  const configService = app.get(ConfigService);
+  const corsOrigins = (
+    configService.get<string>('corsOrigins') ||
+    configService.get<string>('CORS_ORIGINS') ||
+    process.env.CORS_ORIGINS ||
+    ''
+  ).trim();
   const origin = corsOrigins
     ? corsOrigins
         .split(',')
@@ -51,7 +58,11 @@ async function bootstrap() {
     ],
   });
 
-  if (process.env.ENABLE_SWAGGER === 'true') {
+  const isSwaggerEnabled =
+    configService.get<boolean>('swagger.enabled') ??
+    process.env.ENABLE_SWAGGER === 'true';
+
+  if (isSwaggerEnabled) {
     const config = new DocumentBuilder()
       .setTitle('Indian Public School API')
       .setDescription('RESTful API documentation for Indian Public School management system')
@@ -79,7 +90,10 @@ async function bootstrap() {
   app.use('/favicon.ico', (_req, res) => res.status(204).end());
   app.useStaticAssets(join(process.cwd(), 'public'));
 
-  const port = process.env.PORT || 5000;
+  const port =
+    configService.get<number>('port') ||
+    process.env.PORT ||
+    5000;
   await app.listen(port, '0.0.0.0');
   console.log(`Indian Public School API is running on: http://localhost:${port}/api`);
   console.log(`Swagger Documentation is available at: http://localhost:${port}/docs`);

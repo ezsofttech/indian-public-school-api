@@ -17,9 +17,11 @@ import { JwtStrategy } from './jwt.strategy';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET', 'super_secret_ips_admin_jwt_token_key_2026'),
+        secret:
+          configService.get<string>('jwt.secret') ||
+          configService.get<string>('JWT_SECRET', 'super_secret_ips_admin_jwt_token_key_2026'),
         signOptions: {
-          expiresIn: (configService.get<string>('JWT_EXPIRES_IN', '7d') as any),
+          expiresIn: (configService.get<string>('jwt.expiresIn') || configService.get<string>('JWT_EXPIRES_IN', '7d')) as any,
         },
       }),
     }),

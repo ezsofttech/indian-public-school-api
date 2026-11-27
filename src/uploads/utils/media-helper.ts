@@ -1,45 +1,147 @@
 import { ConfigService } from '@nestjs/config';
 
 /**
+ * =========================================================================
+ * 1. Cloudinary Domain & Root Folder Resolution
+ * =========================================================================
+ */
+
+/**
  * Returns the base Cloudinary domain dynamically from configuration or environment.
  */
+/**
+ * Returns the base Cloudinary domain dynamically using the exact CLOUDINARY_CLOUD_NAME.
+ */
 export function getCloudinaryCloudBaseUrl(configService?: ConfigService): string {
-  const cloudName =
+  const cloudName = (
     configService?.get<string>('CLOUDINARY_CLOUD_NAME') ||
-    process.env.CLOUDINARY_CLOUD_NAME;
+    process.env.CLOUDINARY_CLOUD_NAME ||
+    ''
+  ).trim();
 
-  if (!cloudName?.trim()) {
-    throw new Error('CLOUDINARY_CLOUD_NAME is required to build Cloudinary media URLs');
-  }
-  return `https://res.cloudinary.com/${cloudName.trim()}`;
+  return cloudName ? `https://res.cloudinary.com/${cloudName}` : '';
 }
 
 /**
- * Returns the configured root folder dynamically from configuration or environment.
+ * Returns the configured root folder dynamically using the exact CLOUDINARY_ROOT_FOLDER.
  */
 export function getCloudinaryRootFolder(configService?: ConfigService): string {
-  const envFolder =
+  return (
     configService?.get<string>('CLOUDINARY_ROOT_FOLDER') ||
-    process.env.CLOUDINARY_ROOT_FOLDER;
-
-  return envFolder && envFolder.trim() ? envFolder.trim().replace(/^\/+|\/+$/g, '') : 'ips-education';
+    process.env.CLOUDINARY_ROOT_FOLDER ||
+    ''
+  )
+    .trim()
+    .replace(/^\/+|\/+$/g, '');
 }
 
 /**
- * Returns the base URL prefix for media assets dynamically.
+ * Returns the base URL prefix for media assets dynamically using the exact MEDIA_BASE_URL.
  */
 export function getMediaBaseUrl(configService?: ConfigService): string {
-  const envUrl = configService?.get<string>('MEDIA_BASE_URL') || process.env.MEDIA_BASE_URL;
-  if (envUrl && envUrl.trim() && !envUrl.includes('res.cloudinary.com')) return envUrl.trim().replace(/\/+$/, '');
+  const envUrl = (
+    configService?.get<string>('MEDIA_BASE_URL') ||
+    process.env.MEDIA_BASE_URL ||
+    ''
+  ).trim();
+
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '');
+  }
 
   const cloudBase = getCloudinaryCloudBaseUrl(configService);
   const rootFolder = getCloudinaryRootFolder(configService);
 
-  const rootPath = rootFolder.toLowerCase().replace(/\/+$/, '').endsWith('/assets')
-    ? rootFolder
-    : `${rootFolder}/assets`;
+  return rootFolder ? `${cloudBase}/${rootFolder}` : cloudBase;
+}
 
-  return `${cloudBase}/${rootPath}`;
+/**
+ * =========================================================================
+ * 2. Cloudinary Public ID Extraction & Byte Formatting
+ * =========================================================================
+ */
+
+/**
+ * Extract Cloudinary public ID from a Cloudinary URL string.
+ * Examples:
+ * https://res.cloudinary.com/demo/image/upload/v1234567890/folder/sample.jpg -> folder/sample
+ * https://res.cloudinary.com/demo/image/upload/sample.png -> sample
+ */
+export function extractCloudinaryPublicId(url: string, preserveExtension: boolean = false): string | null {
+  if (!url || typeof url !== 'string') return null;
+
+  const decodedUrl = decodeURIComponent(url);
+
+  // If it's a full Cloudinary URL with /upload/
+  if (preserveExtension) {
+    const matchWithExt = decodedUrl.match(/\/upload\/(?:v\d+\/)?(.+)$/);
+    if (matchWithExt && matchWithExt[1]) {
+      return matchWithExt[1];
+    }
+  }
+
+  const match = decodedUrl.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/);
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  // If it's already a Cloudinary public ID or key without http(s)://
+  if (!decodedUrl.startsWith('http://') && !decodedUrl.startsWith('https://')) {
+    const cleanPath = decodedUrl.replace(/^\/+/, '');
+    if (preserveExtension) return cleanPath;
+    return cleanPath.replace(/\.[a-zA-Z0-9]+$/, '');
+  }
+
+  // Fallback: extract last filename part if full URL couldn't match /upload/
+  const parts = decodedUrl.split('/');
+  const filename = parts[parts.length - 1];
+  if (filename) {
+    if (preserveExtension) return filename;
+    return filename.replace(/\.[a-zA-Z0-9]+$/, '');
+  }
+
+  return null;
+}
+
+/**
+ * Format raw byte numbers strictly into MB format.
+ */
+export function formatBytes(bytes: number, decimals: number = 2): string {
+  if (!bytes || isNaN(bytes) || bytes <= 0) return '0 MB';
+
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  if (i <= 0) return `${bytes} Bytes`;
+  if (i === 1) return `${parseFloat((bytes / k).toFixed(dm))} KB`;
+
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
+/**
+ * Format file size error messages from Cloudinary or storage providers into human-readable MB units,
+ * preserving the raw server byte count inside brackets.
+ */
+export function formatFileSizeErrorMessage(errorMessage?: string): string {
+  if (!errorMessage || typeof errorMessage !== 'string') {
+    return 'File size exceeds maximum permitted limit.';
+  }
+
+  if (errorMessage.includes(' (')) {
+    return errorMessage;
+  }
+
+  return errorMessage.replace(/(?:Got|is)\s+(\d{6,12})/gi, (match, digits) => {
+    const num = parseInt(digits, 10);
+    if (!isNaN(num) && num > 0) {
+      const formattedMb = formatBytes(num);
+      const prefix = match.split(/\s+/)[0];
+      return `${prefix} ${formattedMb} (${num.toLocaleString('en-US')} bytes)`;
+    }
+    return match;
+  });
 }
 
 /**
@@ -69,51 +171,72 @@ export function formatPrettyEventName(name?: unknown): string {
 }
 
 /**
+ * =========================================================================
+ * 3. URL Transformation (Relative DB Paths <-> Full Cloudinary CDN URLs)
+ * =========================================================================
+ */
+
+/**
  * Strips host, upload prefix, and root folder from a URL to store a clean relative path in DB.
  */
 export function toRelativeMediaPath(pathOrUrl: unknown, configService?: ConfigService): unknown {
   if (typeof pathOrUrl !== 'string' || !pathOrUrl.trim()) return pathOrUrl;
 
-  let path = pathOrUrl.trim();
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    const cloudBase = getCloudinaryCloudBaseUrl(configService);
-    if (cloudBase && path.startsWith(cloudBase)) {
-      path = path.slice(cloudBase.length);
-    } else {
-      const match = path.match(/^https?:\/\/res\.cloudinary\.com\/[^/]+(\/.*)$/i);
-      if (match?.[1]) {
-        path = match[1];
-      } else {
-        // External link (e.g. https://www.cbse.gov.in) -> preserve untouched!
-        return path;
-      }
-    }
+  const path = pathOrUrl.trim();
+  if (!path.startsWith('http://') && !path.startsWith('https://')) {
+    if (path.startsWith('/')) return path;
+    return `/${path}`;
   }
 
+  // External link (e.g. https://www.cbse.gov.in) -> preserve untouched!
+  if (!path.includes('res.cloudinary.com')) {
+    return path;
+  }
+
+  // Fast direct extraction from Cloudinary URLs (single-pass)
   const rootFolder = getCloudinaryRootFolder(configService);
-  const escapedRoot = rootFolder ? rootFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
-
-  let clean = path.replace(/^https?:\/\/[^\/]+/i, '');
-
-  let prev = '';
-  while (prev !== clean) {
-    prev = clean;
-    clean = clean
-      .replace(/^\/(?:(?:image|video|raw)\/upload\/)+/i, '/')
-      .replace(/^\/(?:(?:f_auto(?:,q_auto)?|q_auto)\/)+/i, '/')
-      .replace(/^\/v\d+\//i, '/')
-      .replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/')
-      .replace(/^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i, '/')
-      .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
-      .replace(/^\/assets\/assets\//i, '/')
-      .replace(/^\/assets\//i, '/');
+  const rootPath = rootFolder
+    ? rootFolder.toLowerCase().replace(/\/+$/, '').endsWith('/assets')
+      ? rootFolder
+      : `${rootFolder}/assets`
+    : 'assets';
+  const escapedRootPath = rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedFolder = rootFolder ? rootFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+  const folderPattern = escapedFolder ? `${escapedRootPath}|${escapedFolder}\\/assets|assets` : `${escapedRootPath}|assets`;
+  const fastMatch = path.match(new RegExp(`\\/(?:${folderPattern})\\/(.+)$`, 'i'));
+  if (fastMatch?.[1]) {
+    const cleanSub = fastMatch[1].replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf').replace(/^\/+/, '');
+    return `/${cleanSub}`;
   }
 
-  // Strip duplicate .pdf.pdf
-  clean = clean.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
+  // Fallback cleanup
+  let clean = path.replace(/^https?:\/\/[^\/]+/i, '');
+  clean = clean
+    .replace(/^\/(?:(?:image|video|raw)\/upload\/)+/i, '/')
+    .replace(/^\/(?:[a-z]{1,4}_[a-zA-Z0-9_.-]+(?:,[a-z]{1,4}_[a-zA-Z0-9_.-]+)*\/)+/i, '/')
+    .replace(/^\/v\d+\//i, '/');
+
+  if (escapedFolder) {
+    clean = clean.replace(new RegExp(`^\\/(?:${escapedFolder})(?:\\/assets\\/)?`, 'i'), '/');
+  }
+
+  clean = clean
+    .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
+    .replace(/^\/assets\/assets\//i, '/')
+    .replace(/^\/assets\//i, '/')
+    .replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
 
   return clean.startsWith('/') ? clean : `/${clean}`;
 }
+
+const RE_UPLOAD_PREFIXES = /^\/(?:(?:image|video|raw)\/upload\/)+/i;
+const RE_TRANSFORMATIONS = /^\/(?:[a-z]{1,4}_[a-zA-Z0-9_.-]+(?:,[a-z]{1,4}_[a-zA-Z0-9_.-]+)*\/)+/i;
+const RE_VERSION = /^\/v\d+\//i;
+const RE_LEGACY_IPS_ROOTS = /^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i;
+const RE_CUSTOM_ASSETS = /^\/[a-zA-Z0-9_-]+\/assets\//i;
+const RE_DOUBLE_ASSETS = /^\/assets\/assets\//i;
+const RE_SINGLE_ASSETS = /^\/assets\//i;
+const RE_DOUBLE_PDF = /\.pdf\.pdf(?=($|\?|#))/gi;
 
 /**
  * Clean, centralized helper to construct full Cloudinary URL dynamically for API responses.
@@ -128,19 +251,16 @@ export function toFullMediaUrl(
 
   let path = pathOrUrl.trim();
   const cfg = typeof mimeTypeOrConfig === 'object' ? mimeTypeOrConfig : configService;
-  const mediaPreset = (cfg?.get<string>('MEDIA_PRESET') || process.env.MEDIA_PRESET || 'default').toLowerCase().trim();
 
   if (path.startsWith('http://') || path.startsWith('https://')) {
     if (path.includes('res.cloudinary.com')) {
-      // If default preset, check if this is a Settings asset that can be served locally
-      if (mediaPreset === 'default' && (path.includes('/Settings/') || path.includes('/assets/Settings/'))) {
-        const match = path.match(/\/(Settings\/[^?#]+)/i);
-        if (match && match[1]) {
-          return `/assets/${match[1]}`;
-        }
+      const cloudBase = getCloudinaryCloudBaseUrl(cfg);
+      // If the URL comes from a legacy or different Cloudinary cloud name, normalize using current configuration
+      if (cloudBase && !path.startsWith(cloudBase)) {
+        const relative = toRelativeMediaPath(path, cfg);
+        return toFullMediaUrl(relative, mimeTypeOrConfig, configService);
       }
 
-      // Inject f_auto,q_auto for Cloudinary image URLs if not already present
       if (
         path.includes('/image/upload/') &&
         !path.includes('/image/upload/f_auto') &&
@@ -171,44 +291,32 @@ export function toFullMediaUrl(
     /\.(doc|docx|xls|xlsx|zip|csv|txt)$/i.test(path)
   ) {
     prefix = '/raw/upload';
-  } else if (
-    lowerMime.includes('pdf') ||
-    /\.pdf$/i.test(path)
-  ) {
-    // Cloudinary stores PDFs under image/upload to allow previews, multi-page rasterization, and transformations
+  } else if (lowerMime.includes('pdf') || /\.pdf$/i.test(path)) {
     prefix = '/image/upload';
   }
 
-  const escapedRoot = rootPath ? rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
   let cleanPath = path.replace(/^https?:\/\/[^\/]+/i, '');
 
-  let prevPath = '';
-  while (prevPath !== cleanPath) {
-    prevPath = cleanPath;
+  if (cleanPath.includes('upload') || cleanPath.includes('assets') || cleanPath.includes('ips-') || /^\/v\d+\//i.test(cleanPath)) {
+    const escapedRoot = rootPath ? rootPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+    const rootRegex = new RegExp(`^\\/${escapedRoot}\\/`, 'i');
+
     cleanPath = cleanPath
-      .replace(/^\/(?:(?:image|video|raw)\/upload\/)+/i, '/')
-      .replace(/^\/(?:(?:f_auto(?:,q_auto)?|q_auto)\/)+/i, '/')
-      .replace(/^\/v\d+\//i, '/')
-      .replace(new RegExp(`^\\/${escapedRoot}\\/`, 'i'), '/')
-      .replace(/^\/(?:ips-edu|ips-education|ips-school)\/(?:assets\/)?/i, '/')
-      .replace(/^\/[a-zA-Z0-9_-]+\/assets\//i, '/')
-      .replace(/^\/assets\/assets\//i, '/')
-      .replace(/^\/assets\//i, '/');
+      .replace(RE_UPLOAD_PREFIXES, '/')
+      .replace(RE_TRANSFORMATIONS, '/')
+      .replace(RE_VERSION, '/')
+      .replace(rootRegex, '/')
+      .replace(RE_LEGACY_IPS_ROOTS, '/')
+      .replace(RE_CUSTOM_ASSETS, '/')
+      .replace(RE_DOUBLE_ASSETS, '/')
+      .replace(RE_SINGLE_ASSETS, '/');
   }
 
-  // Normalize duplicate .pdf.pdf extension
-  cleanPath = cleanPath.replace(/\.pdf\.pdf(?=($|\?|#))/gi, '.pdf');
-
+  cleanPath = cleanPath.replace(RE_DOUBLE_PDF, '.pdf');
   const normalized = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
 
-  // If preset is default, serve local Settings assets locally
-  if (mediaPreset === 'default') {
-    if (
-      normalized.startsWith('/Settings/') ||
-      normalized.startsWith('/assets/Settings/')
-    ) {
-      return `/assets${normalized.replace(/^\/assets/, '')}`;
-    }
+  if (normalized.startsWith('/assets/')) {
+    return normalized;
   }
 
   const envUrl = cfg?.get<string>('MEDIA_BASE_URL') || process.env.MEDIA_BASE_URL;
@@ -216,7 +324,6 @@ export function toFullMediaUrl(
     return `${envUrl.trim().replace(/\/+$/, '')}${normalized}`;
   }
 
-  // Optimize Cloudinary image delivery with automatic format and compression
   let optPrefix = prefix;
   if (prefix === '/image/upload' && !normalized.toLowerCase().endsWith('.pdf')) {
     optPrefix = '/image/upload/f_auto,q_auto';
@@ -253,11 +360,17 @@ export function transformMediaUrlsToRelative<T>(
   if (typeof obj === 'string') {
     const trimmed = obj.trim();
 
-    // Preserve navigation and action link destinations untouched
     if (parentKey && LINK_PROPERTY_KEYS.has(parentKey)) {
       if (!trimmed.includes('res.cloudinary.com')) {
         return trimmed as unknown as T;
       }
+    }
+
+    if (trimmed.includes('res.cloudinary.com') && (trimmed.includes('src=') || trimmed.includes('href='))) {
+      return trimmed.replace(
+        /https:\/\/res\.cloudinary\.com\/[a-zA-Z0-9_-]+\/(?:image|video|raw)\/upload\/[^"'\s\\]+/gi,
+        (match) => String(toRelativeMediaPath(match, configService)),
+      ) as unknown as T;
     }
 
     if (PAGE_ROUTE_PATTERNS.test(trimmed) && !MEDIA_FILE_EXTENSIONS.test(trimmed)) {
@@ -309,15 +422,31 @@ export function transformMediaPathsToFull<T>(
 
     const trimmed = obj.trim();
 
-    // Do NOT transform page navigation routes or action links into Cloudinary image URLs
     if (parentKey && LINK_PROPERTY_KEYS.has(parentKey)) {
       if (!trimmed.includes('res.cloudinary.com') && !trimmed.startsWith('/Settings/') && !trimmed.startsWith('/assets/Settings/')) {
         return trimmed as unknown as T;
       }
     }
 
+    if (trimmed.includes('res.cloudinary.com') && (trimmed.includes('src=') || trimmed.includes('href='))) {
+      return trimmed.replace(
+        /https:\/\/res\.cloudinary\.com\/[a-zA-Z0-9_-]+\/(?:image|video|raw)\/upload\/[^"'\s\\]+/gi,
+        (match) => String(toFullMediaUrl(match, parentMimeType, configService)),
+      ) as unknown as T;
+    }
+
     if (PAGE_ROUTE_PATTERNS.test(trimmed) && !MEDIA_FILE_EXTENSIONS.test(trimmed)) {
       return trimmed as unknown as T;
+    }
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      if (trimmed.includes('res.cloudinary.com')) {
+        const cloudBase = getCloudinaryCloudBaseUrl(configService);
+        if (cloudBase && !trimmed.startsWith(cloudBase)) {
+          return toFullMediaUrl(trimmed, parentMimeType, configService) as unknown as T;
+        }
+      }
+      return obj as unknown as T;
     }
 
     if (trimmed.startsWith('/')) {

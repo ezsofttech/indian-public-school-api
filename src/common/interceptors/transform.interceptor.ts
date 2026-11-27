@@ -65,7 +65,7 @@ function serializeResponse(
 
   const rawObj =
     typeof document.toObject === 'function'
-      ? document.toObject({ getters: true, virtuals: true })
+      ? document.toObject()
       : (value as Record<string, unknown>);
 
   const result: Record<string, unknown> = {};
@@ -116,13 +116,13 @@ export class TransformInterceptor<T> implements NestInterceptor<
     const response = httpContext.getResponse<{ statusCode?: number }>();
     const request = httpContext.getRequest<{ method: string; body?: any }>();
 
-    // Request time: transform incoming payload to relative media paths
-    if (request && request.body && typeof request.body === 'object') {
-      request.body = transformMediaUrlsToRelative(request.body);
-    }
-
     const statusCode = response.statusCode ?? HttpStatus.OK;
     const method = request.method;
+
+    // Request time: transform incoming payload to relative media paths (mutating requests only)
+    if (method !== 'GET' && request && request.body && typeof request.body === 'object') {
+      request.body = transformMediaUrlsToRelative(request.body);
+    }
     const messageByMethod: Record<string, string> = {
       GET: 'Record fetched successfully',
       POST: 'Record created successfully',
