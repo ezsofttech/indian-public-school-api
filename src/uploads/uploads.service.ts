@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { CloudinaryStorageStrategy } from './strategies/cloudinary-storage.strategy';
-import { LocalStorageStrategy } from './strategies/local-storage.strategy';
+// import { LocalStorageStrategy } from './strategies/local-storage.strategy';
 import { GalleryRepository } from '../gallery/gallery.repository';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import {
@@ -24,7 +24,7 @@ export class UploadsService {
   constructor(
     private readonly configService: ConfigService,
     private readonly cloudinaryStrategy: CloudinaryStorageStrategy,
-    private readonly localStorageStrategy: LocalStorageStrategy,
+    // private readonly localStorageStrategy: LocalStorageStrategy,
     private readonly fileCompressorService: FileCompressorService,
     @Inject(forwardRef(() => GalleryRepository))
     private readonly galleryRepository: GalleryRepository,
@@ -71,7 +71,7 @@ export class UploadsService {
       const filename = url.replace(/^\/uploads\//, '');
       if (filename) {
         this.logger.log(`Deleting local storage file: ${filename}`);
-        return this.localStorageStrategy.deleteFile(filename);
+        // return this.localStorageStrategy.deleteFile(filename);
       }
     }
 
@@ -165,7 +165,8 @@ export class UploadsService {
     let result: import('./strategies/storage-strategy.interface').UploadResult;
 
     try {
-      const strategy = provider === 'cloudinary' ? this.cloudinaryStrategy : this.localStorageStrategy;
+      // const strategy = provider === 'cloudinary' ? this.cloudinaryStrategy : this.localStorageStrategy;
+      const strategy = this.cloudinaryStrategy;
       result = await strategy.uploadFile(processedFile, targetFolder);
     } catch (err: any) {
       const rawMsg = err?.message || err?.error?.message || (typeof err === 'string' ? err : String(err)) || 'Unknown upload error';
