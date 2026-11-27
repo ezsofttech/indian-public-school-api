@@ -11,6 +11,7 @@ import {
   formatFileSizeErrorMessage,
   formatBytes,
   toRelativeMediaPath,
+  toFullMediaUrl,
   getCloudinaryRootFolder,
 } from './utils';
 import { FileCompressorService } from './services/file-compressor.service';
@@ -205,6 +206,7 @@ export class UploadsService {
 
     const relativeUrl = toRelativeMediaPath(result.url, this.configService) as string;
 
+    // In DB, always store clean relative path without full domain
     const asset = await this.galleryRepository.create({
       eventName: computedEventName,
       fileUrl: [relativeUrl],
@@ -217,10 +219,15 @@ export class UploadsService {
 
     await this.invalidateCloudinaryCache();
 
+    // Absolute full URL for frontend preview / immediate consumption
+    const fullUrl = result.url || (toFullMediaUrl(relativeUrl, processedFile.mimetype, this.configService) as string);
+
     return {
       ...plainAsset,
-      url: relativeUrl,
-      fileUrl: asset.fileUrl || [relativeUrl],
+      url: fullUrl,
+      secure_url: fullUrl,
+      fileUrl: [fullUrl],
+      relativeUrl: relativeUrl,
       mimeType: asset.mimeType || processedFile.mimetype,
       key: result.key,
       provider: result.provider,
